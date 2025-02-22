@@ -847,7 +847,7 @@ ifdef GGML_MUSA
 	CXX := $(MUSA_PATH)/bin/clang++
 	MCC := $(CCACHE) $(MUSA_PATH)/bin/mcc
 
-	MUSAFLAGS  = -x musa -mtgpu
+	MUSAFLAGS  = -fsigned-char -x musa -mtgpu
 	MUSAFLAGS += $(foreach arch,$(subst ;, ,$(MUSA_ARCHITECTURES)),--cuda-gpu-arch=mp_$(arch))
 
 ifdef GGML_CUDA_FORCE_MMQ
@@ -1364,7 +1364,7 @@ llama-server: \
 	examples/server/index.html.hpp \
 	examples/server/loading.html.hpp \
 	common/chat.cpp \
-	common/chat.hpp \
+	common/chat.h \
 	common/chat-template.hpp \
 	common/json.hpp \
 	common/minja.hpp \
