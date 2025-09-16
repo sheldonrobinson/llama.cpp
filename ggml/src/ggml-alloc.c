@@ -22,21 +22,6 @@ static bool ggml_is_view(const struct ggml_tensor * t) {
     return t->view_src != NULL;
 }
 
-static bool ggml_are_same_layout(const struct ggml_tensor * a, const struct ggml_tensor * b) {
-    if (a->type != b->type) {
-        return false;
-    }
-    for (int i = 0; i < GGML_MAX_DIMS; i++) {
-        if (a->ne[i] != b->ne[i]) {
-            return false;
-        }
-        if (a->nb[i] != b->nb[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
 // ops that return true for this function must not use restrict pointers for their backend implementations
 static bool ggml_op_can_inplace(enum ggml_op op) {
     switch (op) {
@@ -44,6 +29,7 @@ static bool ggml_op_can_inplace(enum ggml_op op) {
         case GGML_OP_DIAG_MASK_ZERO:
         case GGML_OP_DIAG_MASK_INF:
         case GGML_OP_ADD:
+        case GGML_OP_ADD_ID:
         case GGML_OP_ADD1:
         case GGML_OP_SUB:
         case GGML_OP_MUL:
@@ -89,7 +75,7 @@ struct ggml_tallocr ggml_tallocr_new(ggml_backend_buffer_t buffer) {
     return talloc;
 }
 
-void ggml_tallocr_alloc(struct ggml_tallocr * talloc, struct ggml_tensor * tensor) {
+enum ggml_status ggml_tallocr_alloc(struct ggml_tallocr * talloc, struct ggml_tensor * tensor) {
     size_t size = ggml_backend_buffer_get_alloc_size(talloc->buffer, tensor);
     size = GGML_PAD(size, talloc->alignment);
 
@@ -104,7 +90,7 @@ void ggml_tallocr_alloc(struct ggml_tallocr * talloc, struct ggml_tensor * tenso
 
     assert(((uintptr_t)addr % talloc->alignment) == 0);
 
-    ggml_backend_tensor_alloc(talloc->buffer, tensor, addr);
+    return ggml_backend_tensor_alloc(talloc->buffer, tensor, addr);
 }
 
 // dynamic tensor allocator
@@ -816,7 +802,10 @@ static void ggml_gallocr_init_tensor(ggml_gallocr_t galloc, struct ggml_tensor *
 static bool ggml_gallocr_node_needs_realloc(ggml_gallocr_t galloc, struct ggml_tensor * node, struct tensor_alloc * talloc) {
     size_t node_size = 0;
     if (!node->data && !node->view_src) {
-        GGML_ASSERT(talloc->buffer_id >= 0); // prevent segfault when misusing the API
+        // If we previously had data but don't now then reallocate
+        if (talloc->buffer_id < 0) {
+            return false;
+        }
         node_size = ggml_backend_buft_get_alloc_size(galloc->bufts[talloc->buffer_id], node);
     }
     return talloc->size_max >= node_size;
@@ -933,41 +922,50 @@ size_t ggml_gallocr_get_buffer_size(ggml_gallocr_t galloc, int buffer_id) {
 
 // utils
 
+static void free_buffers(ggml_backend_buffer_t ** buffers, const size_t * n_buffers) {
+    for (size_t i = 0; i < *n_buffers; i++) {
+        ggml_backend_buffer_free((*buffers)[i]);
+    }
+    free(*buffers);
+}
+
 static bool alloc_tensor_range(struct ggml_context * ctx,
         struct ggml_tensor * first, struct ggml_tensor * last,
         ggml_backend_buffer_type_t buft, size_t size,
         ggml_backend_buffer_t ** buffers, size_t * n_buffers) {
+
     ggml_backend_buffer_t buffer = ggml_backend_buft_alloc_buffer(buft, size);
     if (buffer == NULL) {
-#ifndef NDEBUG
-        GGML_LOG_DEBUG("%s: failed to allocate %s buffer of size %zu\n", __func__, ggml_backend_buft_name(buft), size);
-#endif
-        for (size_t i = 0; i < *n_buffers; i++) {
-            ggml_backend_buffer_free((*buffers)[i]);
-        }
-        free(*buffers);
+        GGML_LOG_ERROR("%s: failed to allocate %s buffer of size %zu\n", __func__, ggml_backend_buft_name(buft), size);
+        free_buffers(buffers, n_buffers);
         return false;
-    }
-
-    struct ggml_tallocr tallocr = ggml_tallocr_new(buffer);
-
-    for (struct ggml_tensor * t = first; t != last; t = ggml_get_next_tensor(ctx, t)) {
-        if (t->data == NULL) {
-            if (t->view_src == NULL) {
-                ggml_tallocr_alloc(&tallocr, t);
-            } else if (t->buffer == NULL) {
-                ggml_backend_view_init(t);
-            }
-        } else {
-            if (t->view_src != NULL && t->buffer == NULL) {
-                // view of a pre-allocated tensor
-                ggml_backend_view_init(t);
-            }
-        }
     }
 
     *buffers = realloc(*buffers, sizeof(ggml_backend_buffer_t) * (*n_buffers + 1));
     (*buffers)[(*n_buffers)++] = buffer;
+
+    struct ggml_tallocr tallocr = ggml_tallocr_new(buffer);
+
+    for (struct ggml_tensor * t = first; t != last; t = ggml_get_next_tensor(ctx, t)) {
+        enum ggml_status status = GGML_STATUS_SUCCESS;
+        if (t->data == NULL) {
+            if (t->view_src == NULL) {
+                status = ggml_tallocr_alloc(&tallocr, t);
+            } else if (t->buffer == NULL) {
+                status = ggml_backend_view_init(t);
+            }
+        } else {
+            if (t->view_src != NULL && t->buffer == NULL) {
+                // view of a pre-allocated tensor
+                status = ggml_backend_view_init(t);
+            }
+        }
+        if (status != GGML_STATUS_SUCCESS) {
+            GGML_LOG_ERROR("%s: failed to initialize tensor %s\n", __func__, t->name);
+            free_buffers(buffers, n_buffers);
+            return false;
+        }
+    }
 
     return true;
 }

@@ -39,9 +39,15 @@ endif()
 find_package(hip     REQUIRED)
 find_package(hipblas REQUIRED)
 find_package(rocblas REQUIRED)
+if (GGML_HIP_ROCWMMA_FATTN)
+    CHECK_INCLUDE_FILE_CXX("rocwmma/rocwmma.hpp" FOUND_ROCWMMA)
+    if (NOT ${FOUND_ROCWMMA})
+        message(FATAL_ERROR "rocwmma has not been found")
+    endif()
+endif()
 
-if (${hip_VERSION} VERSION_LESS 5.5)
-    message(FATAL_ERROR "At least ROCM/HIP V5.5 is required")
+if (${hip_VERSION} VERSION_LESS 6.1)
+    message(FATAL_ERROR "At least ROCM/HIP V6.1 is required")
 endif()
 
 message(STATUS "HIP and hipBLAS found")
@@ -83,10 +89,6 @@ endif()
 
 add_compile_definitions(GGML_USE_HIP)
 
-if (GGML_HIP_UMA)
-    add_compile_definitions(GGML_HIP_UMA)
-endif()
-
 if (GGML_CUDA_FORCE_MMQ)
     add_compile_definitions(GGML_CUDA_FORCE_MMQ)
 endif()
@@ -105,6 +107,26 @@ endif()
 
 if (GGML_HIP_NO_VMM)
     add_compile_definitions(GGML_HIP_NO_VMM)
+endif()
+
+if (GGML_HIP_ROCWMMA_FATTN)
+    add_compile_definitions(GGML_HIP_ROCWMMA_FATTN)
+endif()
+
+if (NOT GGML_HIP_MMQ_MFMA)
+    add_compile_definitions(GGML_HIP_NO_MMQ_MFMA)
+endif()
+
+if (GGML_HIP_FORCE_ROCWMMA_FATTN_GFX12 OR ${hip_VERSION} VERSION_GREATER_EQUAL 7.0)
+    add_compile_definitions(GGML_HIP_ROCWMMA_FATTN_GFX12)
+endif()
+
+if (GGML_HIP_EXPORT_METRICS)
+    set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} -Rpass-analysis=kernel-resource-usage --save-temps")
+endif()
+
+if (NOT GGML_CUDA_FA)
+    add_compile_definitions(GGML_CUDA_NO_FA)
 endif()
 
 if (CXX_IS_HIPCC)
