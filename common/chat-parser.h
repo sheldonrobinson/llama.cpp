@@ -131,3 +131,5 @@ class common_chat_msg_parser {
 
     void clear_tools();
 };
+
+common_chat_msg common_chat_parse(const std::string & input, bool is_partial, const common_chat_syntax & syntax);
