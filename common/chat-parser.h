@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chat.h"
+#include "peg-parser.h"
 #include "chat-parser-xml-toolcall.h"
 #include "json-partial.h"
 #include "regex-partial.h"
