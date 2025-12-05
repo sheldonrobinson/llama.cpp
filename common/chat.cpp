@@ -2596,14 +2596,3 @@ common_chat_params common_chat_templates_apply(
         ? common_chat_templates_apply_jinja(tmpls, inputs)
         : common_chat_templates_apply_legacy(tmpls, inputs);
 }
-
-common_chat_msg common_chat_parse(
-    const std::string & input,
-    bool is_partial,
-    const common_chat_syntax & syntax)
-{
-    common_chat_msg_parser parser(input, is_partial, syntax);
-    common_chat_parse(parser);
-    return parser.result();
-}
-
