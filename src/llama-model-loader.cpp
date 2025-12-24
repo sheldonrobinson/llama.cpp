@@ -462,6 +462,29 @@ namespace GGUFMeta {
         return get_key_or_arr(llm_kv(kid), result, n, required);
     }
 
+    bool llama_model_loader::get_key_or_arr(enum llm_kv kid, uint32_t & result, bool required) {
+        const std::string key = llm_kv(kid);
+
+        const int id = gguf_find_key(meta.get(), key.c_str());
+
+        if (id < 0) {
+            if (required) {
+                throw std::runtime_error(format("key not found in model: %s", key.c_str()));
+            }
+            return false;
+        }
+
+        // throw and error if type is an array
+        if (gguf_get_kv_type(meta.get(), id) == GGUF_TYPE_ARRAY) {
+            if (required) {
+                throw std::runtime_error(format("expected scalar, found array for key: %s", key.c_str()));
+            }
+            return false;
+        }
+
+        return get_key(key, result, required);
+    }
+
     // TODO: this is not very clever - figure out something better
     template bool llama_model_loader::get_key_or_arr<std::array<int, 4>>(enum llm_kv kid, std::array<int, 4> & result, uint32_t n, bool required);
     template bool llama_model_loader::get_key_or_arr<std::array<uint32_t, 512>>(enum llm_kv kid, std::array<uint32_t, 512> & result, uint32_t n, bool required);
@@ -1086,10 +1109,10 @@ bool llama_model_loader::load_all_data(
             } else {
                 // If upload_backend is valid load the tensor in chunks to pinned memory and upload the buffers asynchronously to the GPU.
                 if (upload_backend) {
-                    auto offset = (off_t) weight->offs;
+                    size_t offset = weight->offs;
                     alignment = file->read_alignment();
-                    off_t aligned_offset = offset & ~(alignment - 1);
-                    off_t offset_from_alignment = offset - aligned_offset;
+                    size_t aligned_offset = offset & ~(alignment - 1);
+                    size_t offset_from_alignment = offset - aligned_offset;
                     file->seek(aligned_offset, SEEK_SET);
 
                     // Calculate aligned read boundaries
