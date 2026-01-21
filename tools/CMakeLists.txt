@@ -24,7 +24,13 @@ else()
     if (LLAMA_BUILD_SERVER)
         add_subdirectory(cli)
         add_subdirectory(server)
+		
     endif()
+	
+	if (LLAMA_HTTPLIB)
+		add_subdirectory(embedded)
+	endif ()
+	
     add_subdirectory(tokenize)
     add_subdirectory(tts)
     add_subdirectory(mtmd)
