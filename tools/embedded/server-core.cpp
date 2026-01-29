@@ -155,25 +155,19 @@ bool server_core_context::init(const common_params & params) {
     auto middleware_server_state = [this](const httplib::Request & req, httplib::Response & res) {
         bool ready = is_ready.load();
         if (!ready) {
-            auto tmp = string_split<std::string>(req.path, '.');
-            if (req.path == "/" || tmp.back() == "html") {
-                res.status = 503;
-                res.set_content(reinterpret_cast<const char*>(loading_html), loading_html_len, "text/html; charset=utf-8");
-            } else {
-                // no endpoints is allowed to be accessed when the server is not ready
-                // this is to prevent any data races or inconsistent states
-                res.status = 503;
-                res.set_content(
-                    safe_json_to_str(json {
-                        {"error", {
-                            {"message", "Loading model"},
-                            {"type", "unavailable_error"},
-                            {"code", 503}
-                        }}
-                    }),
-                    "application/json; charset=utf-8"
-                );
-            }
+			// no endpoints is allowed to be accessed when the server is not ready
+			// this is to prevent any data races or inconsistent states
+			res.status = 503;
+			res.set_content(
+				safe_json_to_str(json {
+					{"error", {
+						{"message", "Loading model"},
+						{"type", "unavailable_error"},
+						{"code", 503}
+					}}
+				}),
+				"application/json; charset=utf-8"
+			);
             return false;
         }
         return true;
@@ -290,7 +284,7 @@ static void process_handler_response(server_core_req_ptr && request, server_core
 }
 
 void server_core_context::get(const std::string & path, const server_core_context::handler_t & handler) const {
-    pimpl->srv->Get(path_prefix + path, [handler](const httplib::Request & req, httplib::Response & res) {
+    pimpl->srv->Get(path, [handler](const httplib::Request & req, httplib::Response & res) {
         server_core_req_ptr request = std::make_unique<server_core_req>(server_core_req{
             get_params(req),
             get_headers(req),
@@ -298,13 +292,13 @@ void server_core_context::get(const std::string & path, const server_core_contex
             req.body,
             req.is_connection_closed
         });
-        server_http_res_ptr response = handler(*request);
+        server_core_res_ptr response = handler(*request);
         process_handler_response(std::move(request), response, res);
     });
 }
 
 void server_core_context::post(const std::string & path, const server_core_context::handler_t & handler) const {
-    pimpl->srv->Post(path_prefix + path, [handler](const httplib::Request & req, httplib::Response & res) {
+    pimpl->srv->Post(path, [handler](const httplib::Request & req, httplib::Response & res) {
         server_core_req_ptr request = std::make_unique<server_core_req>(server_core_req{
             get_params(req),
             get_headers(req),

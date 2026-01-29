@@ -25,13 +25,46 @@ FetchContent_MakeAvailable(libuv)
 file(REAL_PATH ${libuv_SOURCE_DIR} LIBUV_SOURCE_DIR)
 file(REAL_PATH ${libuv_BINARY_DIR} LIBUV_BINARY_DIR)
 
-set(LIBUV_LIBRARY ${LIBUV_SOURCE_DIR}/$<CONFIG>/uv.lib CACHE FILEPATH "libuv library" FORCE)
+set(LIBUV_LIBRARY ${libuv_BINARY_DIR}/$<CONFIG>/uv.lib CACHE FILEPATH "libuv library" FORCE)
 
 if(NOT TARGET libuv::libuv)
 	add_library(libuv::libuv INTERFACE IMPORTED)
     set_target_properties(libuv::libuv PROPERTIES
                           INTERFACE_LINK_LIBRARIES 
 							  uv
+						  INTERFACE_POSITION_INDEPENDENT_CODE ON
+						  )
+endif()
+
+
+######################## libuv
+FetchContent_Declare(
+  pthreadpool
+  GIT_REPOSITORY 		 https://github.com/google/pthreadpool.git
+  GIT_TAG        		 9003ee6c137cea3b94161bd5c614fb43be523ee1
+  GIT_SHALLOW 			 TRUE
+  GIT_SUBMODULES_RECURSE TRUE
+  
+  EXCLUDE_FROM_ALL
+			 
+  OVERRIDE_FIND_PACKAGE
+)
+
+SET(PTHREADPOOL_LIBRARY_TYPE "shared" CACHE STRING "Type of library (shared, static, or default) to build" FORCE)
+set(PTHREADPOOL_ALLOW_DEPRECATED_API OFF CACHE BOOL "Enable deprecated API functions" FORCE)
+set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "Build pthreadpool unit tests" FORCE)
+set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "Build pthreadpool micro-benchmarks" FORCE)
+
+FetchContent_MakeAvailable(pthreadpool)
+
+file(REAL_PATH ${pthreadpool_SOURCE_DIR} PTHREADPOOL_SOURCE_DIR)
+file(REAL_PATH ${pthreadpool_BINARY_DIR} PTHREADPOOL_BINARY_DIR)
+
+if(NOT TARGET pthreadpool::pthreadpool)
+	add_library(pthreadpool::pthreadpool SHARED IMPORTED GLOBAL)
+    set_target_properties(pthreadpool::pthreadpool PROPERTIES
+                          INTERFACE_LINK_LIBRARIES 
+							  pthreadpool
 						  INTERFACE_POSITION_INDEPENDENT_CODE ON
 						  )
 endif()
@@ -80,7 +113,7 @@ install(TARGETS ${TARGET} RUNTIME)
 
 target_include_directories(${TARGET} PRIVATE ../mtmd)
 target_include_directories(${TARGET} PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(${TARGET} PRIVATE embedded-context PUBLIC uv common cpp-httplib concurrentqueue ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${TARGET} PRIVATE embedded-context PUBLIC uv pthreadpool common cpp-httplib concurrentqueue ${CMAKE_THREAD_LIBS_INIT})
 
 
 target_compile_features(${TARGET} PRIVATE cxx_std_17)

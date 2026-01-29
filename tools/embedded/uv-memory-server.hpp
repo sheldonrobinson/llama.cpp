@@ -1,6 +1,6 @@
 #pragma once
 
-#include <httplib.h>
+#include <cpp-httplib/httplib.h>
 #include <uv.h>
 #include <pthreadpool.h>
 #include <thread>

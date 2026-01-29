@@ -11,7 +11,7 @@ struct common_params;
 enum server_core_status : uint8_t {
 	SERVER_CORE_STATUS_SUCCESS,
 	SERVER_CORE_STATUS_FAILURE
-}
+};
 
 // generator-like API for HTTP response generation
 // this object response with one of the 2 modes:
