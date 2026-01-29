@@ -75,6 +75,3 @@ struct server_core_context {
     void get(const std::string & path, const handler_t & handler) const;
     void post(const std::string & path, const handler_t & handler) const;
 };
-
-
-
