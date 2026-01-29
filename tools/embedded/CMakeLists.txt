@@ -22,21 +22,6 @@ set(LIBUV_BUILD_SHARED ON CACHE BOOL "Build shared lib" FORCE)
 
 FetchContent_MakeAvailable(libuv)
 
-file(REAL_PATH ${libuv_SOURCE_DIR} LIBUV_SOURCE_DIR)
-file(REAL_PATH ${libuv_BINARY_DIR} LIBUV_BINARY_DIR)
-
-set(LIBUV_LIBRARY ${libuv_BINARY_DIR}/$<CONFIG>/uv.lib CACHE FILEPATH "libuv library" FORCE)
-
-if(NOT TARGET libuv::libuv)
-	add_library(libuv::libuv INTERFACE IMPORTED)
-    set_target_properties(libuv::libuv PROPERTIES
-                          INTERFACE_LINK_LIBRARIES 
-							  uv
-						  INTERFACE_POSITION_INDEPENDENT_CODE ON
-						  )
-endif()
-
-
 ######################## libuv
 FetchContent_Declare(
   pthreadpool
@@ -56,18 +41,6 @@ set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "Build pthreadpool unit tests" FORCE)
 set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "Build pthreadpool micro-benchmarks" FORCE)
 
 FetchContent_MakeAvailable(pthreadpool)
-
-file(REAL_PATH ${pthreadpool_SOURCE_DIR} PTHREADPOOL_SOURCE_DIR)
-file(REAL_PATH ${pthreadpool_BINARY_DIR} PTHREADPOOL_BINARY_DIR)
-
-if(NOT TARGET pthreadpool::pthreadpool)
-	add_library(pthreadpool::pthreadpool SHARED IMPORTED GLOBAL)
-    set_target_properties(pthreadpool::pthreadpool PROPERTIES
-                          INTERFACE_LINK_LIBRARIES 
-							  pthreadpool
-						  INTERFACE_POSITION_INDEPENDENT_CODE ON
-						  )
-endif()
 
 add_library(${TARGET} STATIC
     server-task.cpp
