@@ -2,7 +2,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
 # server-context containing the core server logic, used by llama-server and CLI
 
-set(TARGET server-context)
+set(TARGET embedded-context)
 
 include(FetchContent)
 ######################## libuv
@@ -80,7 +80,7 @@ install(TARGETS ${TARGET} RUNTIME)
 
 target_include_directories(${TARGET} PRIVATE ../mtmd)
 target_include_directories(${TARGET} PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(${TARGET} PRIVATE server-context PUBLIC uv common cpp-httplib concurrentqueue ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${TARGET} PRIVATE embedded-context PUBLIC uv common cpp-httplib concurrentqueue ${CMAKE_THREAD_LIBS_INIT})
 
 
 target_compile_features(${TARGET} PRIVATE cxx_std_17)
