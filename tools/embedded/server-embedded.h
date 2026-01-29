@@ -42,16 +42,32 @@ extern "C"
  */
 
 enum server_model_status : uint8_t {
-    SERVER_MODEL_STATUS_LOADING,
-    SERVER_MODEL_STATUS_LOADED,
-    SERVER_MODEL_STATUS_UNLOADING,
     SERVER_MODEL_STATUS_UNLOADED,
-    SERVER_MODEL_STATUS_IDLE,
-    SERVER_MODEL_STATUS_PAUSED,
-    SERVER_MODEL_STATUS_RESUMING,
-    SERVER_MODEL_STATUS_ERROR,
-    SERVER_MODEL_STATUS_FAILED
+    SERVER_MODEL_STATUS_LOADING,
+    SERVER_MODEL_STATUS_LOADED
 };
+
+static server_model_status server_model_status_from_string(const std::string & status_str) {
+    if (status_str == "unloaded") {
+        return SERVER_MODEL_STATUS_UNLOADED;
+    }
+    if (status_str == "loading") {
+        return SERVER_MODEL_STATUS_LOADING;
+    }
+    if (status_str == "loaded") {
+        return SERVER_MODEL_STATUS_LOADED;
+    }
+    throw std::runtime_error("invalid server model status");
+}
+
+static std::string server_model_status_to_string(server_model_status status) {
+    switch (status) {
+        case SERVER_MODEL_STATUS_UNLOADED: return "unloaded";
+        case SERVER_MODEL_STATUS_LOADING:  return "loading";
+        case SERVER_MODEL_STATUS_LOADED:   return "loaded";
+        default:                           return "unknown";
+    }
+}
 
 typedef enum server_embedded_status : uint8_t {
     // TODO: also add downloading state when the logic is added
@@ -139,7 +155,7 @@ public:
     void unload_all();
 
     // update the status of a model instance (thread-safe)
-    void update_status(const std::string & name, server_model_status_t status, int exit_code);
+    void update_status(const std::string & name, server_model_status status, int exit_code);
 
     // wait until the model instance is fully loaded (thread-safe)
     // return when the model is loaded or failed to load

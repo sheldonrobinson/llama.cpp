@@ -6,8 +6,6 @@
 #include <string>
 #include <thread>
 
-
-
 struct common_params;
 
 enum server_core_status : uint8_t {
