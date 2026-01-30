@@ -16,7 +16,6 @@ struct server_context_meta {
     bool has_mtmd;
     bool has_inp_image;
     bool has_inp_audio;
-    json json_webui_settings;
     int slot_n_ctx;
     enum llama_pooling_type pooling_type;
 

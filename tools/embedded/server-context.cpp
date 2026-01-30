@@ -573,8 +573,6 @@ private:
 
     server_metrics metrics;
 
-    json json_webui_settings = json::object();
-
     // Necessary similarity of prompt for slot selection
     float slot_prompt_similarity = 0.0f;
 
@@ -838,18 +836,6 @@ private:
         });
 
         metrics.init();
-
-        // populate webui settings
-        {
-            if (!params_base.webui_config_json.empty()) {
-                try {
-                    json_webui_settings = json::parse(params_base.webui_config_json);
-                } catch (const std::exception & e) {
-                    SRV_ERR("%s: failed to parse webui config: %s\n", __func__, e.what());
-                    return false;
-                }
-            }
-        }
 
         // populate chat template params
         {
@@ -2878,8 +2864,7 @@ server_context_meta server_context::get_meta() const {
         /* has_mtmd               */ impl->mctx != nullptr,
         /* has_inp_image          */ impl->chat_params.allow_image,
         /* has_inp_audio          */ impl->chat_params.allow_audio,
-        /* json_webui_settings    */ impl->json_webui_settings,
-        /* slot_n_ctx             */ impl->get_slot_n_ctx(),
+         /* slot_n_ctx             */ impl->get_slot_n_ctx(),
         /* pooling_type           */ llama_pooling_type(impl->ctx),
 
         /* chat_params            */ impl->chat_params,
@@ -3277,7 +3262,7 @@ void server_routes::init_routes() {
             }
         }
 
-        res->headers["Process-Start-Time-Unix"] = std::to_string(res_task->t_start);
+        res->metadata["Process-Start-Time-Unix"] = std::to_string(res_task->t_start);
         res->content_type = "text/plain; version=0.0.4";
         res->status = 200;
         res->data = prometheus.str();
@@ -3388,8 +3373,6 @@ void server_routes::init_routes() {
             { "endpoint_slots",              params.endpoint_slots },
             { "endpoint_props",              params.endpoint_props },
             { "endpoint_metrics",            params.endpoint_metrics },
-            { "webui",                       params.webui },
-            { "webui_settings",              meta->json_webui_settings },
             { "chat_template",               tmpl_default },
             { "chat_template_caps",          meta->chat_template_caps },
             { "bos_token",                   meta->bos_token_str },
