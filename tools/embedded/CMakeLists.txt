@@ -81,20 +81,24 @@ set(TARGET_SRCS
 )
 
 if(BUILD_SHARED_LIBS)
-	add_library(${TARGET} SHARED ${TARGET_SRCS})
+	add_library(llama-embedded SHARED ${TARGET_SRCS})
 else()
-	add_library(${TARGET} STATIC ${TARGET_SRCS})
+	add_library(llama-embedded STATIC ${TARGET_SRCS})
 endif()
 
 if (BUILD_SHARED_LIBS)
-    set_target_properties(${TARGET} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set_target_properties(llama-embedded 
+							PROPERTIES
+							LINKER_LANGUAGE CXX
+							CXX_STANDARD 17
+							C_STANDARD 11
+							POSITION_INDEPENDENT_CODE ON)
 endif()
 
-install(TARGETS ${TARGET} RUNTIME)
+install(TARGETS llama-embedded RUNTIME)
 
-target_include_directories(${TARGET} PRIVATE ../mtmd)
-target_include_directories(${TARGET} PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(${TARGET} PUBLIC common mtmd uv pthreadpool cpp-httplib concurrentqueue ${CMAKE_THREAD_LIBS_INIT})
+target_include_directories(llama-embedded PRIVATE ../mtmd)
+target_include_directories(llama-embedded PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(llama-embedded PUBLIC common mtmd uv pthreadpool cpp-httplib concurrentqueue ${CMAKE_THREAD_LIBS_INIT})
 
-
-target_compile_features(${TARGET} PRIVATE cxx_std_17)
+target_compile_features(llama-embedded PRIVATE cxx_std_17)
