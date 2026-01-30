@@ -110,7 +110,7 @@ struct server_model_meta {
 	}
 };
 
-typedef struct server_models {
+struct server_models {
 private:
     struct instance_t {
         std::thread th;
@@ -171,11 +171,11 @@ public:
     // load the model if not loaded, otherwise do nothing (thread-safe)
     // return false if model is already loaded; return true otherwise (meta may need to be refreshed)
     bool ensure_model_loaded(const std::string & name);
-} server_models_t;
+};
 
 struct server_models_routes {
     common_params params;
-    server_models_t models;
+    server_models models;
     server_models_routes(const common_params & params)
             : params(params), models(params) {
         init_routes();
@@ -189,7 +189,7 @@ struct server_models_routes {
     server_core_context::handler_t get_router_models;
     server_core_context::handler_t post_router_models_load;
     server_core_context::handler_t post_router_models_unload;
-} server_models_routes_t;
+};
 
 LLAMA_API void server_embedded_start(const common_params& params, server_status_callback* callback);
 
