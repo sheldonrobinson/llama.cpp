@@ -93,15 +93,6 @@ static void unset_reserved_args(common_preset & preset, bool unset_model_args) {
     }
 }
 
-void server_model_meta::update_args(common_preset_context & ctx_preset, std::string bin_path) {
-    // update params
-    unset_reserved_args(preset, false);
-    preset.set_option(ctx_preset, "LLAMA_ARG_ALIAS", name);
-    // TODO: maybe validate preset before rendering ?
-    // render args
-    args = preset.to_args(bin_path);
-}
-
 //
 // server_models
 //
