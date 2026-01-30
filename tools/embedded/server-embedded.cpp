@@ -175,7 +175,7 @@ void server_models::load_models() {
         server_model_meta meta{
             /* preset       */ preset.second,
             /* name         */ preset.first,
-            /* status       */ SERVER_MODEL_STATUS_UNLOADED,
+            /* status       */ server_model_status::SERVER_MODEL_STATUS_UNLOADED,
             /* last_used    */ 0,
             /* args         */ std::vector<std::string>(),
             /* exit_code    */ 0,
@@ -319,7 +319,7 @@ void server_models::load(const std::string & name) {
     // prepare new instance info
     instance_t inst;
     inst.meta           = meta;
-    inst.meta.status    = SERVER_MODEL_STATUS_LOADING;
+    inst.meta.status    = server_model_status::SERVER_MODEL_STATUS_LOADING;
     inst.meta.last_used = ggml_time_ms();
 	
 	{
@@ -390,7 +390,7 @@ void server_models::unload(const std::string & name) {
             SRV_INF("unloading model instance name=%s\n", name.c_str());
             try{
 				g_modelManager.unloadModel(name);
-				update_status(name,  SERVER_MODEL_STATUS_UNLOADED, 0);
+				update_status(name,  server_model_status::SERVER_MODEL_STATUS_UNLOADED, 0);
 			}catch(...){
 				update_status(name,  inst.meta.status, -1);
 			}
@@ -408,7 +408,7 @@ void server_models::unload_all() {
 				SRV_INF("unloading model instance name=%s\n", name.c_str());
 				try{
 					g_modelManager.unloadModel(name);
-					update_status(name,  SERVER_MODEL_STATUS_UNLOADED, 0);
+					update_status(name,  server_model_status::SERVER_MODEL_STATUS_UNLOADED, 0);
 				}catch(...){
 					update_status(name,  inst.meta.status, -1);
 				}

@@ -21,7 +21,7 @@
 struct ModelContext {
     std::shared_ptr<llama_model> model;
     std::shared_ptr<llama_context> context;
-    server_model_status_t state = SERVER_MODEL_STATUS_UNLOADED;
+    server_model_status state = server_model_status::SERVER_MODEL_STATUS_UNLOADED;
     size_t memoryUsageMB = 0;
     int fitted_n_ctx = 0;
     int fitted_n_batch = 0;
@@ -33,7 +33,7 @@ struct ModelContext {
 
 class ModelManager {
 public:
-    using StateChangeListener = std::function<void(const std::string &, server_model_status_t, server_model_status_t)>;
+    using StateChangeListener = std::function<void(const std::string &, server_model_status, server_model_status)>;
 
     explicit ModelManager(size_t maxMemMB, size_t baseTenantQuotaMB = 4096)
         : maxMemoryMB(maxMemMB), baseTenantQuotaMB(baseTenantQuotaMB), currentMemoryMB(0) {}
@@ -78,7 +78,7 @@ public:
         }
 
         ModelContext ctx;
-        changeState(tenantModelName, ctx, SERVER_MODEL_STATUS_LOADING);
+        changeState(tenantModelName, ctx, server_model_status::SERVER_MODEL_STATUS_LOADING);
 		models.emplace(tenantModelName, ctx);
         // models[tenantModelName] = std::move(ctx);
 
@@ -103,7 +103,7 @@ public:
         models[tenantModelName].fitted_n_batch = cparams.n_batch;
         models[tenantModelName].fitted_n_gpu_layers = mparams.n_gpu_layers;
 
-        changeState(tenantModelName, models[tenantModelName], SERVER_MODEL_STATUS_LOADED);
+        changeState(tenantModelName, models[tenantModelName], server_model_status::SERVER_MODEL_STATUS_LOADED);
 
         currentMemoryMB += estimatedMem;
         tenantMemoryUsage[tenant] += estimatedMem;
@@ -115,7 +115,7 @@ public:
         auto it = models.find(tenantModelName);
         if (it == models.end()) throw std::runtime_error("Model not found");
 
-        changeState(tenantModelName, it->second, SERVER_MODEL_STATUS_UNLOADED);
+        changeState(tenantModelName, it->second, server_model_status::SERVER_MODEL_STATUS_UNLOADED);
 
         currentMemoryMB -= it->second.memoryUsageMB;
         tenantMemoryUsage[tenantFromKey(tenantModelName)] -= it->second.memoryUsageMB;
@@ -214,8 +214,8 @@ private:
         return baseQuota + boost;
     }
 
-    void changeState(const std::string &name, ModelContext &ctx, server_model_status_t newState) {
-        server_model_status_t oldState = ctx.state;
+    void changeState(const std::string &name, ModelContext &ctx, server_model_status newState) {
+        server_model_status oldState = ctx.state;
         ctx.state = newState;
         ctx.lastStateChange = std::chrono::system_clock::now();
         ctx.history.push_back(server_model_status_to_string(newState));
@@ -245,14 +245,12 @@ private:
         std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> otherTenant;
 
         for (auto &kv : models) {
-            if (!kv.second.active) {
-                std::string tenant = tenantFromKey(kv.first);
-                if (tenant == requestingTenant) {
-                    sameTenant.push_back({kv.first, kv.second.lastStateChange});
-                } else {
-                    otherTenant.push_back({kv.first, kv.second.lastStateChange});
-                }
-            }
+			std::string tenant = tenantFromKey(kv.first);
+			if (tenant == requestingTenant) {
+				sameTenant.push_back({kv.first, kv.second.lastStateChange});
+			} else {
+				otherTenant.push_back({kv.first, kv.second.lastStateChange});
+			}
         }
 
         auto sortByLRU = [](auto &a, auto &b) { return a.second < b.second; };

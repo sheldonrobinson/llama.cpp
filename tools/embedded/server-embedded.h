@@ -38,26 +38,26 @@ extern "C"
  *  └────────unloaded─────────┘
  */
 
-typedef enum server_model_status : int8_t {
+enum server_model_status {
     SERVER_MODEL_STATUS_UNLOADED,
     SERVER_MODEL_STATUS_LOADING,
     SERVER_MODEL_STATUS_LOADED
-} server_model_status_t;
+};
 
-static server_model_status_t server_model_status_from_string(const std::string & status_str) {
+static server_model_status server_model_status_from_string(const std::string & status_str) {
     if (status_str == "unloaded") {
-        return SERVER_MODEL_STATUS_UNLOADED;
+        return server_model_status::SERVER_MODEL_STATUS_UNLOADED;
     }
     if (status_str == "loading") {
-        return SERVER_MODEL_STATUS_LOADING;
+        return server_model_status::SERVER_MODEL_STATUS_LOADING;
     }
     if (status_str == "loaded") {
-        return SERVER_MODEL_STATUS_LOADED;
+        return server_model_status::SERVER_MODEL_STATUS_LOADED;
     }
     throw std::runtime_error("invalid server model status");
 }
 
-static std::string server_model_status_to_string(server_model_status_t status) {
+static std::string server_model_status_to_string(server_model_status status) {
     switch (status) {
         case SERVER_MODEL_STATUS_UNLOADED: return "unloaded";
         case SERVER_MODEL_STATUS_LOADING:  return "loading";
@@ -86,7 +86,7 @@ typedef void (*server_status_callback)(server_embedded_status_t, size_t);
 struct server_model_meta {
     common_preset preset;
     std::string name;
-    server_model_status_t status = SERVER_MODEL_STATUS_UNLOADED;
+    server_model_status status = server_model_status::SERVER_MODEL_STATUS_UNLOADED;
     int64_t last_used = 0; // for LRU unloading
     std::vector<std::string> args; // args passed to the model instance, will be populated by render_args()
     int exit_code = 0; // exit code of the model instance process (only valid if status == FAILED)
@@ -159,7 +159,7 @@ public:
     void unload_all();
 
     // update the status of a model instance (thread-safe)
-    void update_status(const std::string & name, server_model_status_t status, int exit_code);
+    void update_status(const std::string & name, server_model_status status, int exit_code);
 
     // wait until the model instance is fully loaded (thread-safe)
     // return when the model is loaded or failed to load
