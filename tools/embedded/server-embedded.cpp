@@ -1,5 +1,6 @@
 #include "server-common.h"
 #include "server-embedded.h"
+#include "server-context.h"
 
 #include "preset.h"
 #include "download.h"
@@ -615,7 +616,7 @@ static server_core_context::handler_t ex_wrapper(server_core_context::handler_t 
             message = "unknown error";
         }
 
-        auto res = std::make_unique<server_http_res>();
+        auto res = std::make_unique<server_core_res>();
         res->status = 500;
         try {
             json error_data = format_error_response(message, error);
