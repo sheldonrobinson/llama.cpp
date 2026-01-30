@@ -1,3 +1,5 @@
+#pragma once
+
 #include "server-core.h"
 #include "server-task.h"
 #include "server-queue.h"

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "common.h"
 #include "preset.h"
 #include "server-common.h"
