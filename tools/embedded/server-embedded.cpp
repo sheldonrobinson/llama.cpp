@@ -418,7 +418,7 @@ void server_models::unload_all() {
 		}
 }
 
-void server_models::update_status(const std::string & name, server_model_status_t status, int exit_code) {
+void server_models::update_status(const std::string & name, server_model_status status, int exit_code) {
     std::unique_lock<std::mutex> lk(mutex);
     auto it = mapping.find(name);
     if (it != mapping.end()) {
