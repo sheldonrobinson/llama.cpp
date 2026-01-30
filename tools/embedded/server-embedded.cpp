@@ -242,7 +242,7 @@ void server_models::load_models() {
 }
 
 
-void server_models::update_meta(const std::string & name, const server_model_meta_t & meta) {
+void server_models::update_meta(const std::string & name, const server_model_meta & meta) {
     std::lock_guard<std::mutex> lk(mutex);
     auto it = mapping.find(name);
     if (it != mapping.end()) {
@@ -257,7 +257,7 @@ bool server_models::has_model(const std::string & name) {
     return mapping.find(name) != mapping.end();
 }
 
-std::optional<server_model_meta_t> server_models::get_meta(const std::string & name) {
+std::optional<server_model_meta> server_models::get_meta(const std::string & name) {
     std::lock_guard<std::mutex> lk(mutex);
     auto it = mapping.find(name);
     if (it != mapping.end()) {
@@ -266,7 +266,7 @@ std::optional<server_model_meta_t> server_models::get_meta(const std::string & n
     return std::nullopt;
 }
 
-std::vector<server_model_meta_t> server_models::get_all_meta() {
+std::vector<server_model_meta> server_models::get_all_meta() {
     std::lock_guard<std::mutex> lk(mutex);
     std::vector<server_model_meta> result;
     result.reserve(mapping.size());

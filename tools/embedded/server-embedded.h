@@ -83,7 +83,7 @@ typedef void (*server_status_callback)(server_embedded_status_t, size_t);
 }
 #endif
 
-typedef struct server_model_meta {
+struct server_model_meta {
     common_preset preset;
     std::string name;
     server_model_status_t status = SERVER_MODEL_STATUS_UNLOADED;
@@ -100,14 +100,21 @@ typedef struct server_model_meta {
         return status == SERVER_MODEL_STATUS_UNLOADED && exit_code != 0;
     }
 
-    void update_args(common_preset_context & ctx_presets, std::string bin_path);
-} server_model_meta_t;
+    void update_args(common_preset_context & ctx_presets, std::string bin_path) {
+		// update params
+		unset_reserved_args(preset, false);
+		preset.set_option(ctx_presets, "LLAMA_ARG_ALIAS", name);
+		// TODO: maybe validate preset before rendering ?
+		// render args
+		args = preset.to_args(bin_path);
+	}
+};
 
 typedef struct server_models {
 private:
     struct instance_t {
         std::thread th;
-        server_model_meta_t meta;
+        server_model_meta meta;
     };
 
     std::mutex mutex;
@@ -123,13 +130,13 @@ private:
     common_params base_params;
 	std::string bin_path;
 
-    void update_meta(const std::string & name, const server_model_meta_t & meta);
+    void update_meta(const std::string & name, const server_model_meta & meta);
 
     // unload least recently used models if the limit is reached
     void unload_lru();
 
     // not thread-safe, caller must hold mutex
-    void add_model(server_model_meta_t && meta);
+    void add_model(server_model_meta && meta);
 
 public:
     server_models(const common_params & params);
@@ -140,10 +147,10 @@ public:
     bool has_model(const std::string & name);
 
     // return a copy of model metadata (thread-safe)
-    std::optional<server_model_meta_t> get_meta(const std::string & name);
+    std::optional<server_model_meta> get_meta(const std::string & name);
 
     // return a copy of all model metadata (thread-safe)
-    std::vector<server_model_meta_t> get_all_meta();
+    std::vector<server_model_meta> get_all_meta();
 
     // load and unload model instances
     // these functions are thread-safe
