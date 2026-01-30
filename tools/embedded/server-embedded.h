@@ -38,26 +38,26 @@ extern "C"
  *  └────────unloaded─────────┘
  */
 
-enum server_model_status : int8_t {
+typedef enum server_model_status : int8_t {
     SERVER_MODEL_STATUS_UNLOADED,
     SERVER_MODEL_STATUS_LOADING,
     SERVER_MODEL_STATUS_LOADED
-};
+} server_model_status_t;
 
-static server_model_status server_model_status_from_string(const std::string & status_str) {
+static server_model_status_t server_model_status_from_string(const std::string & status_str) {
     if (status_str == "unloaded") {
-        return server_model_status::SERVER_MODEL_STATUS_UNLOADED;
+        return SERVER_MODEL_STATUS_UNLOADED;
     }
     if (status_str == "loading") {
-        return server_model_status::SERVER_MODEL_STATUS_LOADING;
+        return SERVER_MODEL_STATUS_LOADING;
     }
     if (status_str == "loaded") {
-        return server_model_status::SERVER_MODEL_STATUS_LOADED;
+        return SERVER_MODEL_STATUS_LOADED;
     }
     throw std::runtime_error("invalid server model status");
 }
 
-static std::string server_model_status_to_string(server_model_status status) {
+static std::string server_model_status_to_string(server_model_status_t status) {
     switch (status) {
         case SERVER_MODEL_STATUS_UNLOADED: return "unloaded";
         case SERVER_MODEL_STATUS_LOADING:  return "loading";
@@ -66,7 +66,7 @@ static std::string server_model_status_to_string(server_model_status status) {
     }
 }
 
-typedef enum server_embedded_status : uint8_t {
+typedef enum server_embedded_status : int8_t {
     // TODO: also add downloading state when the logic is added
     SERVER_EMBEDDED_STATUS_STARTING,
     SERVER_EMBEDDED_STATUS_STARTED,
@@ -86,18 +86,18 @@ typedef void (*server_status_callback)(server_embedded_status_t, size_t);
 typedef struct server_model_meta {
     common_preset preset;
     std::string name;
-    server_model_status status = server_model_status::SERVER_MODEL_STATUS_UNLOADED;
+    server_model_status_t status = SERVER_MODEL_STATUS_UNLOADED;
     int64_t last_used = 0; // for LRU unloading
     std::vector<std::string> args; // args passed to the model instance, will be populated by render_args()
     int exit_code = 0; // exit code of the model instance process (only valid if status == FAILED)
     int stop_timeout = 0; // seconds to wait before force-killing the model instance during shutdown
 
     bool is_active() const {
-        return status == server_model_status::SERVER_MODEL_STATUS_LOADED || status == server_model_status::SERVER_MODEL_STATUS_LOADING;
+        return status == SERVER_MODEL_STATUS_LOADED || status == SERVER_MODEL_STATUS_LOADING;
     }
 
     bool is_failed() const {
-        return status == server_model_status::SERVER_MODEL_STATUS_UNLOADED && exit_code != 0;
+        return status == SERVER_MODEL_STATUS_UNLOADED && exit_code != 0;
     }
 
     void update_args(common_preset_context & ctx_presets, std::string bin_path);
