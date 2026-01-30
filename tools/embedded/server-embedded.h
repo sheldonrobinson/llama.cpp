@@ -152,11 +152,14 @@ public:
     void unload_all();
 
     // update the status of a model instance (thread-safe)
-    void update_status(const std::string & name, server_model_status status, int exit_code);
+    void update_status(const std::string & name, server_model_status_t status, int exit_code);
 
     // wait until the model instance is fully loaded (thread-safe)
     // return when the model is loaded or failed to load
     void wait_until_loaded(const std::string & name);
+	
+	// proxy an HTTP request to the model instance
+    server_core_res_ptr proxy_request(const server_core_req & req, const std::string & method, const std::string & name, bool update_last_used);
 
     // load the model if not loaded, otherwise do nothing (thread-safe)
     // return false if model is already loaded; return true otherwise (meta may need to be refreshed)
@@ -174,7 +177,8 @@ struct server_models_routes {
     void init_routes();
     // handlers using lambda function, so that they can capture `this` without `std::bind`
     server_core_context::handler_t get_router_props;
-    server_core_context::handler_t proxy_call;
+    server_core_context::handler_t proxy_get;
+    server_core_context::handler_t proxy_post;
     server_core_context::handler_t get_router_models;
     server_core_context::handler_t post_router_models_load;
     server_core_context::handler_t post_router_models_unload;
@@ -182,4 +186,4 @@ struct server_models_routes {
 
 LLAMA_API void server_embedded_start(const common_params& params, server_status_callback* callback);
 
-LLAMA_API void server_embedded_stop(size_t tid);
+LLAMA_API void server_embedded_stop();

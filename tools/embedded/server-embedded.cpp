@@ -178,11 +178,6 @@ void server_models::load_models() {
         }
     }
 
-    // server base preset from CLI args take highest precedence
-    for (auto & [name, preset] : final_presets) {
-        preset.merge(base_preset);
-    }
-
     // convert presets to server_model_meta and add to mapping
     for (const auto & preset : final_presets) {
         server_model_meta meta{
@@ -341,7 +336,7 @@ void server_models::load(const std::string & name) {
         inst.meta.update_args(ctx_preset, bin_path); // render args
 		
 		try {
-			g_modelManager.loadModel(name,params);
+			g_modelManager.loadModel(name, base_params);
 		} catch(...){
 			throw std::runtime_error("failed to load model");
 		}
@@ -398,7 +393,7 @@ static bool is_autoload(const common_params & params, const server_core_req & re
 void server_models::unload(const std::string & name) {
     auto it = mapping.find(name);
     if (it != mapping.end()) {
-		auto inst = *it;
+		auto & inst = it->second;
         if (inst.meta.is_active()) {
             SRV_INF("unloading model instance name=%s\n", name.c_str());
             try{
@@ -431,7 +426,7 @@ void server_models::unload_all() {
 		}
 }
 
-void server_models::update_status(const std::string & name, server_model_status status, int exit_code) {
+void server_models::update_status(const std::string & name, server_model_status_t status, int exit_code) {
     std::unique_lock<std::mutex> lk(mutex);
     auto it = mapping.find(name);
     if (it != mapping.end()) {
@@ -600,11 +595,44 @@ void server_models_routes::init_routes() {
 static std::function<void(int)> shutdown_handler;
 static std::atomic_flag is_terminating = ATOMIC_FLAG_INIT;
 
-// struct that contains llama context and inference
-static server_context ctx_server;
+// this is to make sure handler_t never throws exceptions; instead, it returns an error response
+static server_core_context::handler_t ex_wrapper(server_core_context::handler_t func) {
+    return [func = std::move(func)](const server_core_req & req) -> server_core_res_ptr {
+        std::string message;
+        error_type error;
+        try {
+            return func(req);
+        } catch (const std::invalid_argument & e) {
+            // treat invalid_argument as invalid request (400)
+            error = ERROR_TYPE_INVALID_REQUEST;
+            message = e.what();
+        } catch (const std::exception & e) {
+            // treat other exceptions as server error (500)
+            error = ERROR_TYPE_SERVER;
+            message = e.what();
+        } catch (...) {
+            error = ERROR_TYPE_SERVER;
+            message = "unknown error";
+        }
 
-void server_embedded_start(const common_params& params, server_status_callback* callback){
+        auto res = std::make_unique<server_http_res>();
+        res->status = 500;
+        try {
+            json error_data = format_error_response(message, error);
+            res->status = json_value(error_data, "code", 500);
+            res->data = safe_json_to_str({{ "error", error_data }});
+            SRV_WRN("got exception: %s\n", res->data.c_str());
+        } catch (const std::exception & e) {
+            SRV_ERR("got another exception: %s | while handling exception: %s\n", e.what(), message.c_str());
+            res->data = "Internal Server Error";
+        }
+        return res;
+    };
+}
+
+void server_embedded_start(const common_params& args, server_status_callback* callback){
 	
+	common_params params = std::move(args);
 	// validate batch size for embeddings
     // embeddings require all tokens to be processed in a single ubatch
     // see https://github.com/ggml-org/llama.cpp/issues/12836
@@ -627,6 +655,9 @@ void server_embedded_start(const common_params& params, server_status_callback* 
     }
 
     common_init();
+	
+	// struct that contains llama context and inference
+    server_context ctx_server;
 
     llama_backend_init();
     llama_numa_init(params.numa);
@@ -635,7 +666,7 @@ void server_embedded_start(const common_params& params, server_status_callback* 
     LOG_INF("\n");
     LOG_INF("%s\n", common_params_get_system_info(params).c_str());
     LOG_INF("\n");
-	
+
 	server_core_context ctx_http;
     if (!ctx_http.init(params)) {
         LOG_ERR("%s: failed to initialize HTTP server\n", __func__);
@@ -694,7 +725,7 @@ void server_embedded_start(const common_params& params, server_status_callback* 
 	if (!ctx_http.start()) {
 		clean_up();
 		LOG_ERR("%s: exiting due to HTTP server error\n", __func__);
-		return 1;
+		return;
 	}
 
 	// load the model
@@ -719,6 +750,8 @@ void server_embedded_start(const common_params& params, server_status_callback* 
 		ctx_server.terminate();
 	};
 	
+	// starting
+	is_terminating.clear();
 	
 	// this call blocks the main thread until queue_tasks.terminate() is called
 	ctx_server.start_loop();
@@ -730,7 +763,7 @@ void server_embedded_start(const common_params& params, server_status_callback* 
 }
 
 
-void server_embedded_stop(size_t tid){
+void server_embedded_stop(){
 	if (is_terminating.test_and_set()) {
         return;
     }

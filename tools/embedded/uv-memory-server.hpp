@@ -257,7 +257,7 @@ public:
     const ServerMetrics& get_metrics() const { return metrics_; }
 
 private:
-    static void pthreadpool_task(void* context, size_t, size_t) {
+    static void pthreadpool_task(void* context, size_t) {
         auto* task = reinterpret_cast<std::function<void()>*>(context);
         (*task)();
         delete task;
@@ -284,11 +284,14 @@ private:
     }
 
     void dispatch_batch(const std::vector<StreamPtr>& batch) {
-        for (auto& s : batch) {
-            auto* task = new std::function<void()>([this, s]() {
-                try {
-                    bool close_conn = false;
-                    this->process_request(s, close_conn);
+        std::string addr("0.0.0.0");
+		for (const StreamPtr& s : batch) {
+			auto * task = new std::function<void()>([this, s, addr]() {
+				try {
+					bool close_conn = false;
+					MemoryDuplexStream& stream  = *s.get();
+					this->process_request(stream, addr, 0, addr, 0, close_conn,
+										  close_conn, nullptr);
 
                     // After HTTP handshake, set up async streaming handler
                     s->set_message_handler([this, s](const std::string& msg) {

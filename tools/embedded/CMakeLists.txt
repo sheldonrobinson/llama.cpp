@@ -22,7 +22,7 @@ set(LIBUV_BUILD_SHARED ON CACHE BOOL "Build shared lib" FORCE)
 
 FetchContent_MakeAvailable(libuv)
 
-######################## libuv
+######################## pthreadpool
 FetchContent_Declare(
   pthreadpool
   GIT_REPOSITORY 		 https://github.com/google/pthreadpool.git
@@ -41,6 +41,22 @@ set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "Build pthreadpool unit tests" FORCE)
 set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "Build pthreadpool micro-benchmarks" FORCE)
 
 FetchContent_MakeAvailable(pthreadpool)
+
+
+######################## concurrentqueue
+FetchContent_Declare(
+  concurrentqueue
+  GIT_REPOSITORY 		 https://github.com/cameron314/concurrentqueue.git
+  GIT_TAG        		 c68072129c8a5b4025122ca5a0c82ab14b30cb03
+  GIT_SHALLOW 			 TRUE
+  GIT_SUBMODULES_RECURSE TRUE
+  
+  EXCLUDE_FROM_ALL
+			 
+  OVERRIDE_FIND_PACKAGE
+)
+
+FetchContent_MakeAvailable(concurrentqueue)
 
 add_library(${TARGET} STATIC
     server-task.cpp
