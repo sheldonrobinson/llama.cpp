@@ -35,7 +35,7 @@ FetchContent_Declare(
   OVERRIDE_FIND_PACKAGE
 )
 
-SET(PTHREADPOOL_LIBRARY_TYPE "shared" CACHE STRING "Type of library (shared, static, or default) to build" FORCE)
+SET(PTHREADPOOL_LIBRARY_TYPE "static" CACHE STRING "Type of library (shared, static, or default) to build" FORCE)
 set(PTHREADPOOL_ALLOW_DEPRECATED_API OFF CACHE BOOL "Enable deprecated API functions" FORCE)
 set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "Build pthreadpool unit tests" FORCE)
 set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "Build pthreadpool micro-benchmarks" FORCE)
@@ -62,8 +62,6 @@ FetchContent_MakeAvailable(concurrentqueue)
 if (NOT LLAMA_HTTPLIB)
     message(FATAL_ERROR "LLAMA_HTTPLIB is OFF, cannot build llama-embedded. Hint: to skip building server, set -DLLAMA_BUILD_SERVER=OFF")
 endif()
-
-
 
 set(TARGET_SRCS
 	server-task.cpp
