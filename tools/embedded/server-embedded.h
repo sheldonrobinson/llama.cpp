@@ -14,8 +14,6 @@
 #include <thread>
 #include <atomic>
 #include <vector>
-#include "httplib.h" // cpp-httplib header
-#include "concurrentqueue.h" // moodycamel concurrentqueue
 
 #ifdef __cplusplus
 	#include <cstdint>

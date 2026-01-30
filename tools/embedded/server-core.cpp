@@ -3,8 +3,6 @@
 #include "server-common.h"
 
 #include "uv-memory-server.hpp"
-#include <boost/asio.hpp>
-#include <concurrentqueue.h> // moodycamel concurrentqueue
 #include <functional>
 #include <string>
 #include <thread>

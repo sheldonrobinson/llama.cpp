@@ -19,12 +19,8 @@
 #include <cstring>
 
 #ifdef _WIN32
-#include <winsock2.h>
 #include <windows.h>
 #else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <unistd.h>
 extern char **environ;
 #endif
