@@ -12,9 +12,9 @@
 #include <vector>
 #include <algorithm>
 #include <functional>
+#include <nlohmann/json.hpp>
 #include "llama.h"
 #include "common.h"
-#include "json.hpp"
 
 #include "server-embedded.h"
 

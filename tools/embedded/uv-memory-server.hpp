@@ -65,6 +65,14 @@ public:
         size_t len = std::min(size, msg.size());
         memcpy(ptr, msg.data(), len);
         return static_cast<ssize_t>(len);
+		
+		// std::string data;
+        // if (!incoming_queue_.try_dequeue(data)) {
+            // return 0; // No data available yet
+        // }
+        // size_t len = std::min(size, data.size());
+        // memcpy(ptr, data.data(), len);
+        // return static_cast<ssize_t>(len);
     }
 
     // ====== Server writes to client ======
@@ -178,6 +186,10 @@ private:
     // Lossless queues
     std::queue<std::string> client_to_server_queue_;
     std::queue<std::string> server_to_client_queue_;
+	
+	// moodycamel::ConcurrentQueue<std::string> incoming_queue_;
+    // moodycamel::ConcurrentQueue<std::string> outgoing_queue_;
+    // std::atomic<bool> closed_;
 
     // Synchronization
     std::mutex c2s_mutex_;
