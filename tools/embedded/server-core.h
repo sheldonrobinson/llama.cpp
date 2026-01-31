@@ -57,12 +57,13 @@ typedef struct server_core_req {
 
 
 struct server_core_context {
-    std::unique_ptr<UVMemoryServer> srv;
+
+    std::unique_ptr<UVMemoryServer> srv = std::make_unique<UVMemoryServer>();
 
     std::thread thread; // server thread
     std::atomic<bool> is_ready = false;
 
-    server_core_context();
+    server_core_context() = default;
     ~server_core_context();
 
     bool init(const common_params & params);

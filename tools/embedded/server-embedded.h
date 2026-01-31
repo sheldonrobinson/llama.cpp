@@ -160,7 +160,7 @@ public:
     // return when the model is loaded or failed to load
     void wait_until_loaded(const std::string & name);
 	
-	// send request to the model instance
+	// proxy an HTTP request to the model instance
     server_core_res_ptr proxy_request(const server_core_req & req, const std::string & method, const std::string & name, bool update_last_used);
 
     // load the model if not loaded, otherwise do nothing (thread-safe)
@@ -217,6 +217,11 @@ struct server_core_proxy : server_core_res {
     };
 };
 
-LLAMA_API void server_embedded_start(const common_params& params, server_status_callback* callback);
+void server_embedded_start(const common_params& params, server_status_callback* callback);
 
-LLAMA_API void server_embedded_stop();
+void server_embedded_stop();
+
+void server_embedded_submit(std::vector<common_chat_msg>     messages,
+                                      std::function<void(std::string)> streaming_response_cb,
+                                      std::function<void(common_chat_msg)> response_cb);
+

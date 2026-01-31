@@ -11,12 +11,6 @@
 //
 // HTTP implementation using cpp-httplib, any multithread middleware allowed
 //
-
-server_core_context::server_core_context()
-    : srv(std::make_unique<UVMemoryServer>())
-{}
-
-
 server_core_context::~server_core_context() = default;
 
 static void log_server_request(const httplib::Request & req, const httplib::Response & res) {

@@ -5,7 +5,7 @@
 #include "preset.h"
 #include "download.h"
 
-#include "uv-memory-server.hpp" // TODO: remove this once we use HTTP client from download.h
+#include "uv-memory-server.hpp"
 #include "server-model-manager.hpp"
 #include <functional>
 #include <algorithm>
@@ -26,8 +26,22 @@
 extern char **environ;
 #endif
 
+#if defined(__linux__) && !defined(__ANDROID__)  // Linux
+#include <sys/sysinfo.h>
+#endif
+
+#if defined(__ANDROID__)  // Android
+#include <fstream>
+#include <sstream>
+#include <string>
+#endif
+
+
 #if defined(__APPLE__) && defined(__MACH__)
 // macOS: use _NSGetExecutablePath to get the executable path
+#include <mach/mach.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
 #include <mach-o/dyld.h>
 #include <limits.h>
 #endif
@@ -36,6 +50,88 @@ extern char **environ;
 
 #define CMD_ROUTER_TO_CHILD_EXIT  "cmd_router_to_child:exit"
 #define CMD_CHILD_TO_ROUTER_READY "cmd_child_to_router:ready"
+
+struct MemoryInfo {
+    unsigned long long total_physical;
+    unsigned long long available_physical;
+};
+
+MemoryInfo get_memory_info() {
+    MemoryInfo info{};
+
+#if defined(_WIN32)
+    MEMORYSTATUSEX statex;
+    statex.dwLength = sizeof(statex);
+    if (!GlobalMemoryStatusEx(&statex)) {
+        throw std::runtime_error("Failed to get memory info on Windows");
+    }
+    info.total_physical     = statex.ullTotalPhys;
+    info.available_physical = statex.ullAvailPhys;
+
+#elif defined(__linux__) && !defined(__ANDROID__)
+    struct sysinfo memInfo;
+    if (sysinfo(&memInfo) != 0) {
+        throw std::runtime_error("Failed to get memory info on Linux");
+    }
+    info.total_physical     = static_cast<unsigned long long>(memInfo.totalram) * memInfo.mem_unit;
+    info.available_physical = static_cast<unsigned long long>(memInfo.freeram) * memInfo.mem_unit;
+
+#elif defined(__APPLE__)
+    // Get total RAM
+    int      mib[2] = { CTL_HW, HW_MEMSIZE };
+    uint64_t total;
+    size_t   len = sizeof(total);
+    if (sysctl(mib, 2, &total, &len, nullptr, 0) != 0) {
+        throw std::runtime_error("Failed to get total memory on macOS");
+    }
+    info.total_physical = total;
+
+    // Get available RAM using Mach API
+    mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+    vm_statistics64_data_t vmstat;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO, reinterpret_cast<host_info64_t>(&vmstat), &count) !=
+        KERN_SUCCESS) {
+        throw std::runtime_error("Failed to get available memory on macOS");
+    }
+    uint64_t free_mem       = static_cast<uint64_t>(vmstat.free_count) * sysconf(_SC_PAGESIZE);
+    uint64_t inactive_mem   = static_cast<uint64_t>(vmstat.inactive_count) * sysconf(_SC_PAGESIZE);
+    info.available_physical = free_mem + inactive_mem;
+
+#elif defined(__ANDROID__)
+    // Read from /proc/meminfo
+    std::ifstream meminfo_file("/proc/meminfo");
+    if (!meminfo_file.is_open()) {
+        throw std::runtime_error("Failed to open /proc/meminfo on Android");
+    }
+
+    std::string        line;
+    unsigned long long mem_total_kb = 0, mem_available_kb = 0;
+    while (std::getline(meminfo_file, line)) {
+        std::istringstream iss(line);
+        std::string        key;
+        unsigned long long value;
+        std::string        unit;
+        if (iss >> key >> value >> unit) {
+            if (key == "MemTotal:") {
+                mem_total_kb = value;
+            } else if (key == "MemAvailable:") {
+                mem_available_kb = value;
+            }
+        }
+    }
+    meminfo_file.close();
+
+    if (mem_total_kb == 0 || mem_available_kb == 0) {
+        throw std::runtime_error("Failed to parse memory info on Android");
+    }
+
+    info.total_physical     = mem_total_kb * 1024ULL;
+    info.available_physical = mem_available_kb * 1024ULL;
+
+#endif
+
+    return info;
+}
 
 static std::filesystem::path get_server_exec_path() {
 #if defined(_WIN32)
@@ -94,12 +190,12 @@ static void unset_reserved_args(common_preset & preset, bool unset_model_args) {
 }
 
 void server_model_meta::update_args(common_preset_context & ctx_presets, std::string bin_path) {
-	// update params
-	unset_reserved_args(preset, false);
-	preset.set_option(ctx_presets, "LLAMA_ARG_ALIAS", name);
-	// TODO: maybe validate preset before rendering ?
-	// render args
-	args = preset.to_args(bin_path);
+    // update params
+    unset_reserved_args(preset, false);
+    preset.set_option(ctx_presets, "LLAMA_ARG_ALIAS", name);
+    // TODO: maybe validate preset before rendering ?
+    // render args
+    args = preset.to_args(bin_path);
 }
 
 //
@@ -672,8 +768,130 @@ static server_core_context::handler_t ex_wrapper(server_core_context::handler_t 
     };
 }
 
-void server_embedded_start(const common_params& args, server_status_callback* callback){
-	try {
+static std::unordered_map<std::string, server_core_context*> g_servers;
+
+void server_embedded_model_init(const common_params & args) {
+    common_params params = args;
+    // validate batch size for embeddings
+    // embeddings require all tokens to be processed in a single ubatch
+    // see https://github.com/ggml-org/llama.cpp/issues/12836
+    if (params.embedding && params.n_batch > params.n_ubatch) {
+        LOG_WRN("%s: embeddings enabled with n_batch (%d) > n_ubatch (%d)\n", __func__, params.n_batch,
+                params.n_ubatch);
+        LOG_WRN("%s: setting n_batch = n_ubatch = %d to avoid assertion failure\n", __func__, params.n_ubatch);
+        params.n_batch = params.n_ubatch;
+    }
+
+    if (params.n_parallel < 0) {
+        LOG_INF("%s: n_parallel is set to auto, using n_parallel = 4 and kv_unified = true\n", __func__);
+        params.n_parallel = 4;
+        params.kv_unified = true;
+    }
+
+    // for consistency between server router mode and single-model mode, we set the same model name as alias
+    if (params.model_alias.empty() && !params.model.name.empty()) {
+        params.model_alias = params.model.name;
+    }
+
+    g_modelManager.loadModel(params.model.name, params);
+
+    // struct that contains llama context and inference
+    ModelContext model_ctx = g_modelManager.getModelContext(params.model.name);
+
+    server_core_context ctx_http; 
+
+    auto & result = g_servers.emplace(std::make_pair(params.model.name, &ctx_http));
+
+    if (!result.second) {
+        return;
+    }
+
+    // auto & ctx_http = result.first->second;
+    
+    if (!ctx_http.init(params)) {
+        g_servers.erase(params.model.name);
+        return;
+    }
+
+    // register API routes
+    server_routes routes(params, *model_ctx.server_ctx);
+
+    ctx_http.get("/health", ex_wrapper(routes.get_health));     // public endpoint (no API key check)
+    ctx_http.get("/v1/health", ex_wrapper(routes.get_health));  // public endpoint (no API key check)
+    ctx_http.get("/metrics", ex_wrapper(routes.get_metrics));
+    ctx_http.get("/props", ex_wrapper(routes.get_props));
+    ctx_http.post("/props", ex_wrapper(routes.post_props));
+    ctx_http.post("/api/show", ex_wrapper(routes.get_api_show));
+    ctx_http.get("/models", ex_wrapper(routes.get_models));     // public endpoint (no API key check)
+    ctx_http.get("/v1/models", ex_wrapper(routes.get_models));  // public endpoint (no API key check)
+    ctx_http.get("/api/tags",
+                 ex_wrapper(routes.get_models));  // ollama specific endpoint. public endpoint (no API key check)
+    ctx_http.post("/completion", ex_wrapper(routes.post_completions));  // legacy
+    ctx_http.post("/completions", ex_wrapper(routes.post_completions));
+    ctx_http.post("/v1/completions", ex_wrapper(routes.post_completions_oai));
+    ctx_http.post("/chat/completions", ex_wrapper(routes.post_chat_completions));
+    ctx_http.post("/v1/chat/completions", ex_wrapper(routes.post_chat_completions));
+    ctx_http.post("/api/chat", ex_wrapper(routes.post_chat_completions));       // ollama specific endpoint
+    ctx_http.post("/v1/messages", ex_wrapper(routes.post_anthropic_messages));  // anthropic messages API
+    ctx_http.post("/v1/messages/count_tokens",
+                  ex_wrapper(routes.post_anthropic_count_tokens));              // anthropic token counting
+    ctx_http.post("/infill", ex_wrapper(routes.post_infill));
+    ctx_http.post("/embedding", ex_wrapper(routes.post_embeddings));            // legacy
+    ctx_http.post("/embeddings", ex_wrapper(routes.post_embeddings));
+    ctx_http.post("/v1/embeddings", ex_wrapper(routes.post_embeddings_oai));
+    ctx_http.post("/rerank", ex_wrapper(routes.post_rerank));
+    ctx_http.post("/reranking", ex_wrapper(routes.post_rerank));
+    ctx_http.post("/v1/rerank", ex_wrapper(routes.post_rerank));
+    ctx_http.post("/v1/reranking", ex_wrapper(routes.post_rerank));
+    ctx_http.post("/tokenize", ex_wrapper(routes.post_tokenize));
+    ctx_http.post("/detokenize", ex_wrapper(routes.post_detokenize));
+    ctx_http.post("/apply-template", ex_wrapper(routes.post_apply_template));
+    // LoRA adapters hotswap
+    ctx_http.get("/lora-adapters", ex_wrapper(routes.get_lora_adapters));
+    ctx_http.post("/lora-adapters", ex_wrapper(routes.post_lora_adapters));
+    // Save & load slots
+    ctx_http.get("/slots", ex_wrapper(routes.get_slots));
+    ctx_http.post("/slots/:id_slot", ex_wrapper(routes.post_slots));
+
+    // start the HTTP server before loading the model to be able to serve /health requests
+    if (!ctx_http.start()) {
+        try {
+            ctx_http.stop();
+        } catch (...) {
+            SRV_ERR("%s: failed to stop HTTP server after start failure\n", __func__);
+        }
+        g_servers.erase(params.model.name);
+        LOG_ERR("%s: exiting due to HTTP server error\n", __func__);
+        return;
+    }
+
+    // load the model
+    LOG_INF("%s: loading model\n", __func__);
+    if (!(*model_ctx.server_ctx).load_model(params)) {
+        try {
+            ctx_http.stop();
+        } catch (...) {
+            SRV_ERR("%s: failed to stop HTTP server after start failure\n", __func__);
+        }
+        if (ctx_http.thread.joinable()) {
+            ctx_http.thread.join();
+        }
+        g_servers.erase(params.model.name);
+        LOG_ERR("%s: exiting due to model loading error\n", __func__);
+        return;
+    }
+
+    routes.update_meta(*model_ctx.server_ctx);
+    ctx_http.is_ready.store(true);
+
+    LOG_INF("%s: model loaded\n", __func__);
+
+    // this call blocks the main thread until queue_tasks.terminate() is called
+    (*model_ctx.server_ctx).start_loop();
+}
+
+void server_embedded_start(ggml_numa_strategy numa, server_status_callback * callback) {
+    try {
        auto& mem_info = get_memory_info();
         size_t total_mem = mem_info.total_physical/(1024*1024);
        if (total_mem > 4096) {
@@ -682,137 +900,35 @@ void server_embedded_start(const common_params& args, server_status_callback* ca
     } catch (const std::exception & e) {
         LOG_WRN("%s: failed to get system memory info: %s\n", __func__, e.what());
     }
-	common_params params = std::move(args);
-	// validate batch size for embeddings
-    // embeddings require all tokens to be processed in a single ubatch
-    // see https://github.com/ggml-org/llama.cpp/issues/12836
-    if (params.embedding && params.n_batch > params.n_ubatch) {
-        LOG_WRN("%s: embeddings enabled with n_batch (%d) > n_ubatch (%d)\n", __func__, params.n_batch, params.n_ubatch);
-        LOG_WRN("%s: setting n_batch = n_ubatch = %d to avoid assertion failure\n", __func__, params.n_ubatch);
-        params.n_batch = params.n_ubatch;
-    }
-
-    if (params.n_parallel < 0) {
-        LOG_INF("%s: n_parallel is set to auto, using n_parallel = 4 and kv_unified = true\n", __func__);
-
-        params.n_parallel = 4;
-        params.kv_unified = true;
-    }
-	
-	// for consistency between server router mode and single-model mode, we set the same model name as alias
-    if (params.model_alias.empty() && !params.model.name.empty()) {
-        params.model_alias = params.model.name;
-    }
 
     common_init();
 
     llama_backend_init();
-    llama_numa_init(params.numa);
+    llama_numa_init(numa);
 
-    g_modelManager.loadModel(params.model.name, params);
-
-    // struct that contains llama context and inference
-    ModelContext model_ctx = g_modelManager.getModelContext(params.model.name);
-
-	server_core_context ctx_http;
-    if (!ctx_http.init(params)) {
-        return;
-    }
-	
-	// register API routes
-    server_routes routes(params, *model_ctx.server_ctx);
-	
-	ctx_http.get ("/health",              ex_wrapper(routes.get_health)); // public endpoint (no API key check)
-    ctx_http.get ("/v1/health",           ex_wrapper(routes.get_health)); // public endpoint (no API key check)
-    ctx_http.get ("/metrics",             ex_wrapper(routes.get_metrics));
-    ctx_http.get ("/props",               ex_wrapper(routes.get_props));
-    ctx_http.post("/props",               ex_wrapper(routes.post_props));
-    ctx_http.post("/api/show",            ex_wrapper(routes.get_api_show));
-    ctx_http.get ("/models",              ex_wrapper(routes.get_models)); // public endpoint (no API key check)
-    ctx_http.get ("/v1/models",           ex_wrapper(routes.get_models)); // public endpoint (no API key check)
-    ctx_http.get ("/api/tags",            ex_wrapper(routes.get_models)); // ollama specific endpoint. public endpoint (no API key check)
-    ctx_http.post("/completion",          ex_wrapper(routes.post_completions)); // legacy
-    ctx_http.post("/completions",         ex_wrapper(routes.post_completions));
-    ctx_http.post("/v1/completions",      ex_wrapper(routes.post_completions_oai));
-    ctx_http.post("/chat/completions",    ex_wrapper(routes.post_chat_completions));
-    ctx_http.post("/v1/chat/completions", ex_wrapper(routes.post_chat_completions));
-    ctx_http.post("/api/chat",            ex_wrapper(routes.post_chat_completions)); // ollama specific endpoint
-    ctx_http.post("/v1/messages",         ex_wrapper(routes.post_anthropic_messages)); // anthropic messages API
-    ctx_http.post("/v1/messages/count_tokens", ex_wrapper(routes.post_anthropic_count_tokens)); // anthropic token counting
-    ctx_http.post("/infill",              ex_wrapper(routes.post_infill));
-    ctx_http.post("/embedding",           ex_wrapper(routes.post_embeddings)); // legacy
-    ctx_http.post("/embeddings",          ex_wrapper(routes.post_embeddings));
-    ctx_http.post("/v1/embeddings",       ex_wrapper(routes.post_embeddings_oai));
-    ctx_http.post("/rerank",              ex_wrapper(routes.post_rerank));
-    ctx_http.post("/reranking",           ex_wrapper(routes.post_rerank));
-    ctx_http.post("/v1/rerank",           ex_wrapper(routes.post_rerank));
-    ctx_http.post("/v1/reranking",        ex_wrapper(routes.post_rerank));
-    ctx_http.post("/tokenize",            ex_wrapper(routes.post_tokenize));
-    ctx_http.post("/detokenize",          ex_wrapper(routes.post_detokenize));
-    ctx_http.post("/apply-template",      ex_wrapper(routes.post_apply_template));
-    // LoRA adapters hotswap
-    ctx_http.get ("/lora-adapters",       ex_wrapper(routes.get_lora_adapters));
-    ctx_http.post("/lora-adapters",       ex_wrapper(routes.post_lora_adapters));
-    // Save & load slots
-    ctx_http.get ("/slots",               ex_wrapper(routes.get_slots));
-    ctx_http.post("/slots/:id_slot",      ex_wrapper(routes.post_slots));
-
-    shutdown_handler = [&ctx_http](int) {
-        ctx_http.stop();
+    shutdown_handler = [](int) {
+        SRV_INF("%s: cleaning up before exit...\n", __func__);
+        std::vector<std::thread> to_join;
+        for (auto & [name, ctx_http] : g_servers) {
+            ctx_http->stop();
+            to_join.push_back(std::move(ctx_http->thread));
+        }
+        for (auto & th : to_join) {
+            if (th.joinable()) {
+                th.join();
+            }
+        }
         auto models = g_modelManager.listModels();
         for (const auto & name : models) {
             SRV_INF("%s: unloading model %s\n", __func__, name.c_str());
             g_modelManager.unloadModel(name);
         }
+        g_servers.clear();
         llama_backend_free();
     };
 	
-	// setup clean up function, to be called before exit
-    //std::function<void()> clean_up = [&ctx_http]() {
-    //        SRV_INF("%s: cleaning up before exit...\n", __func__);
-    //        ctx_http.stop();
-    //        auto models = g_modelManager.listModels();
-    //        for (const auto& name : models){
-    //            SRV_INF("%s: unloading model %s\n", __func__, name.c_str());
-    //            g_modelManager.unloadModel(name);
-    //        }
-    //        llama_backend_free();
-    //};
-	
-	
-	// start the HTTP server before loading the model to be able to serve /health requests
-	if (!ctx_http.start()) {
-        shutdown_handler(-1);
-		LOG_ERR("%s: exiting due to HTTP server error\n", __func__);
-		return;
-	}
-
-	// load the model
-	LOG_INF("%s: loading model\n", __func__);
-	if (!(*model_ctx.server_ctx).load_model(params)) {
-        shutdown_handler(-1);
-		if (ctx_http.thread.joinable()) {
-			ctx_http.thread.join();
-		}
-		LOG_ERR("%s: exiting due to model loading error\n", __func__);
-		return;
-	}
-
-	routes.update_meta(*model_ctx.server_ctx);
-	ctx_http.is_ready.store(true);
-
-	LOG_INF("%s: model loaded\n", __func__);
-
 	// starting
 	is_terminating.clear();
-	
-	// this call blocks the main thread until queue_tasks.terminate() is called
-    // (*model_ctx.server_ctx).start_loop();
-
-	//clean_up();
-	//if (ctx_http.thread.joinable()) {
-	//	ctx_http.thread.join();
-	//}
 }
 
 
@@ -964,7 +1080,12 @@ server_core_proxy::server_core_proxy(const std::string &                        
         rd.post_task({ std::move(task) });
     }
 
-    //std::thread inference_thread([&server_ctx]() { server_ctx->start_loop(); });
+    if (model_ctx.state != SERVER_MODEL_STATUS_LOADED) {
+        thread = std::thread([&server_ctx]() {
+            server_ctx->start_loop(); }
+        );
+    }
+    
 
     //server_task_result_ptr result = rd.next(should_stop);
 

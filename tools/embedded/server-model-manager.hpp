@@ -53,8 +53,8 @@ public:
         : maxMemoryMB(maxMemMB), baseTenantQuotaMB(baseTenantQuotaMB), currentMemoryMB(0) {}
 
     void setMaxMemory(size_t maxMemMB) { maxMemoryMB = maxMemMB;}
-	
-	void addStateChangeListener(StateChangeListener listener) {
+
+    void addStateChangeListener(StateChangeListener listener) {
         std::lock_guard<std::mutex> lock(listenerMutex);
         listeners.push_back(std::move(listener));
     }
@@ -66,7 +66,8 @@ public:
             throw std::runtime_error("Model file not found: " + params.model.path);
         }
         if (models.count(tenantModelName)) {
-            throw std::runtime_error("Model already loaded: " + tenantModelName);
+            SRV_WRN("Model already loaded: %s", tenantModelName.c_str());
+            return;
         }
 
 		common_params args = params;
@@ -91,15 +92,28 @@ public:
                 args.tensor_buft_overrides.push_back(*(mparams.tensor_buft_overrides + i));
             }
         }
+ 
 
         if (mparams.tensor_split) {
-            float portionSum = 0.0f;
+            size_t          nd           = llama_max_devices();
+            int             count            = 0;
+            float           portionSum   = 0.0f;
+            float           allocatedSum = 0.0f;
             constexpr float LAST_EPSILON = 1.0f - FLT_EPSILON;
             for (int i = 0; *(mparams.tensor_split + i) > 0.0f && portionSum < LAST_EPSILON; i++) {
-                if (i < 128) {
-                   args.tensor_split[i] = *(mparams.tensor_split + i);
+                if (i < nd) {
+                    args.tensor_split[i] = *(mparams.tensor_split + i);
+                    allocatedSum += *(mparams.tensor_split + i);
                 }
+                count++;
                 portionSum += *(mparams.tensor_split + i);
+            }
+            // rescale
+            if (count > nd || fabs(1.0f - allocatedSum) > FLT_EPSILON) {
+                float factor = 1.0f / allocatedSum;
+                for (size_t j = 0; j < nd; j++) {
+                    args.tensor_split[j] = args.tensor_split[j] * factor;
+                }
             }
         }
        
@@ -123,6 +137,7 @@ public:
         if (!(models[tenantModelName].server_ctx->load_model(args))) {
             throw std::runtime_error("Failed to load model: " + params.model.path);
         }
+
         models[tenantModelName].memoryUsageMB = estimatedMem;
         models[tenantModelName].fitted_n_ctx = cparams.n_ctx;
         models[tenantModelName].fitted_n_batch = cparams.n_batch;
