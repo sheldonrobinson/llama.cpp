@@ -25,6 +25,20 @@
 	#include <stdbool.h>
 #endif
 
+#ifdef LLAMA_SHARED
+#    if defined(_WIN32) && !defined(__MINGW32__)
+#        ifdef LLAMA_BUILD
+#            define LLAMA_EMBEDDED_API __declspec(dllexport)
+#        else
+#            define LLAMA_EMBEDDED_API __declspec(dllimport)
+#        endif
+#    else
+#        define LLAMA_EMBEDDED_API __attribute__ ((visibility ("default")))
+#    endif
+#else
+#    define LLAMA_EMBEDDED_API
+#endif
+
 
 #ifdef __cplusplus
 extern "C"
@@ -234,15 +248,14 @@ struct common_chat_msg_with_timings {
 
 };
 
-void server_embedded_inference_svc(const common_params & args);
+LLAMA_EMBEDDED_API void server_embedded_inference_svc(const common_params & args);
 
-void server_embedded_start(const common_params& params, server_status_callback* callback);
+LLAMA_EMBEDDED_API void server_embedded_start(const common_params& params, server_status_callback* callback);
 
-void server_embedded_stop();
+LLAMA_EMBEDDED_API void server_embedded_stop();
 
-void server_embedded_submit(std::string model,
+LLAMA_EMBEDDED_API void server_embedded_submit(std::string model,
                             std::vector<common_chat_msg>     messages,
                             std::vector<common_chat_tool>        tools,
                             std::function<void(std::string)> streaming_response_cb,
                             std::function<void(common_chat_msg_with_timings)> response_with_timings_cb);
-
