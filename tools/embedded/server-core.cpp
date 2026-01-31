@@ -12,13 +12,8 @@
 // HTTP implementation using cpp-httplib, any multithread middleware allowed
 //
 
-class server_core_context::Impl {
-public:
-    std::unique_ptr<UVMemoryServer> srv;
-};
-
 server_core_context::server_core_context()
-    : pimpl(std::make_unique<server_core_context::Impl>())
+    : srv(std::make_unique<UVMemoryServer>())
 {}
 
 
@@ -39,10 +34,8 @@ static void log_server_request(const httplib::Request & req, const httplib::Resp
 }
 
 bool server_core_context::init(const common_params & params) {
-	
-	auto & srv = pimpl->srv;
 
-	srv.reset(new UVMemoryServer(4,50,8));
+    srv.reset(new UVMemoryServer(4,50,8));
 	
 	srv->set_default_headers({{"Server", "llama.cpp"}});
     srv->set_logger(log_server_request);
@@ -205,17 +198,16 @@ bool server_core_context::init(const common_params & params) {
 }
 bool server_core_context::start() {
     // Bind and listen
-    auto & srv = pimpl->srv;
 
     // run the HTTP server in a thread
-    thread = std::thread([this]() { pimpl->srv->listen_with_uv(); });
+    thread = std::thread([this]() { srv->listen_with_uv(); });
     srv->wait_until_ready();
     return true;
 }
 
 void server_core_context::stop() const {
-    if (pimpl->srv) {
-        pimpl->srv->stop_with_uv();
+    if (srv) {
+        srv->stop_with_uv();
     }
 }
 
@@ -282,7 +274,7 @@ static void process_handler_response(server_core_req_ptr && request, server_core
 }
 
 void server_core_context::get(const std::string & path, const server_core_context::handler_t & handler) const {
-    pimpl->srv->Get(path, [handler](const httplib::Request & req, httplib::Response & res) {
+    srv->Get(path, [handler](const httplib::Request & req, httplib::Response & res) {
         server_core_req_ptr request = std::make_unique<server_core_req>(server_core_req{
             get_params(req),
             get_headers(req),
@@ -296,7 +288,7 @@ void server_core_context::get(const std::string & path, const server_core_contex
 }
 
 void server_core_context::post(const std::string & path, const server_core_context::handler_t & handler) const {
-    pimpl->srv->Post(path, [handler](const httplib::Request & req, httplib::Response & res) {
+    srv->Post(path, [handler](const httplib::Request & req, httplib::Response & res) {
         server_core_req_ptr request = std::make_unique<server_core_req>(server_core_req{
             get_params(req),
             get_headers(req),

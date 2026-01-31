@@ -12,6 +12,36 @@
 #include <string>
 #include <vector>
 #include <cinttypes>
+#include<iostream>
+#include <stdexcept>
+#include <string>
+
+#if defined(_WIN32)  // Windows
+#    include <intrin.h>
+#    include <windows.h>
+
+#elif defined(__linux__) && !defined(__ANDROID__)  // Linux
+#    include <sys/sysinfo.h>
+#    include <unistd.h>
+
+#    include <fstream>
+#    include <sstream>
+
+#elif defined(__APPLE__)  // macOS
+#    include <mach/mach.h>
+#    include <sys/sysctl.h>
+#    include <sys/types.h>
+#    include <unistd.h>
+
+#elif defined(__ANDROID__)  // Android
+#    include <unistd.h>
+
+#    include <fstream>
+#    include <sstream>
+
+#else
+#    error "Unsupported platform"
+#endif
 
 using json = nlohmann::ordered_json;
 
@@ -28,6 +58,207 @@ using json = nlohmann::ordered_json;
 #define SRV_DBG(fmt, ...) LOG_DBG("srv  %12.*s: " fmt, 12, __func__, __VA_ARGS__)
 
 using raw_buffer = std::vector<uint8_t>;
+
+struct MemoryInfo {
+    unsigned long long total_physical;
+    unsigned long long available_physical;
+    unsigned long long total_swap;
+    unsigned long long available_swap;
+};
+
+struct CPUInfo {
+    std::string architecture;
+    int         cores;
+    double      frequency_mhz;  // Approximate
+};
+
+// ---------------- MEMORY INFO ----------------
+MemoryInfo get_memory_info() {
+    MemoryInfo info{};
+
+#if defined(_WIN32)
+    MEMORYSTATUSEX statex;
+    statex.dwLength = sizeof(statex);
+    if (!GlobalMemoryStatusEx(&statex)) {
+        throw std::runtime_error("Failed to get memory info on Windows");
+    }
+    info.total_physical     = statex.ullTotalPhys;
+    info.available_physical = statex.ullAvailPhys;
+    info.total_swap         = statex.ullTotalPageFile;
+    info.available_swap     = statex.ullAvailPageFile;
+
+#elif defined(__linux__) && !defined(__ANDROID__)
+    struct sysinfo memInfo;
+    if (sysinfo(&memInfo) != 0) {
+        throw std::runtime_error("Failed to get memory info on Linux");
+    }
+    info.total_physical     = static_cast<unsigned long long>(memInfo.totalram) * memInfo.mem_unit;
+    info.available_physical = static_cast<unsigned long long>(memInfo.freeram) * memInfo.mem_unit;
+    info.total_swap         = static_cast<unsigned long long>(memInfo.totalswap) * memInfo.mem_unit;
+    info.available_swap     = static_cast<unsigned long long>(memInfo.freeswap) * memInfo.mem_unit;
+
+#elif defined(__APPLE__)
+    // Total RAM
+    int      mib[2] = { CTL_HW, HW_MEMSIZE };
+    uint64_t total;
+    size_t   len = sizeof(total);
+    if (sysctl(mib, 2, &total, &len, nullptr, 0) != 0) {
+        throw std::runtime_error("Failed to get total memory on macOS");
+    }
+    info.total_physical = total;
+
+    // Available RAM
+    mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+    vm_statistics64_data_t vmstat;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO, reinterpret_cast<host_info64_t>(&vmstat), &count) !=
+        KERN_SUCCESS) {
+        throw std::runtime_error("Failed to get available memory on macOS");
+    }
+    uint64_t free_mem       = static_cast<uint64_t>(vmstat.free_count) * sysconf(_SC_PAGESIZE);
+    uint64_t inactive_mem   = static_cast<uint64_t>(vmstat.inactive_count) * sysconf(_SC_PAGESIZE);
+    info.available_physical = free_mem + inactive_mem;
+
+    // Swap info
+    struct xsw_usage swap;
+    size_t           swap_size   = sizeof(swap);
+    int              swap_mib[2] = { CTL_VM, VM_SWAPUSAGE };
+    if (sysctl(swap_mib, 2, &swap, &swap_size, nullptr, 0) != 0) {
+        throw std::runtime_error("Failed to get swap info on macOS");
+    }
+    info.total_swap     = swap.xsu_total;
+    info.available_swap = swap.xsu_avail;
+
+#elif defined(__ANDROID__)
+    std::ifstream meminfo_file("/proc/meminfo");
+    if (!meminfo_file.is_open()) {
+        throw std::runtime_error("Failed to open /proc/meminfo on Android");
+    }
+
+    std::string        line;
+    unsigned long long mem_total_kb = 0, mem_available_kb = 0;
+    unsigned long long swap_total_kb = 0, swap_free_kb = 0;
+
+    while (std::getline(meminfo_file, line)) {
+        std::istringstream iss(line);
+        std::string        key;
+        unsigned long long value;
+        std::string        unit;
+        if (iss >> key >> value >> unit) {
+            if (key == "MemTotal:") {
+                mem_total_kb = value;
+            } else if (key == "MemAvailable:") {
+                mem_available_kb = value;
+            } else if (key == "SwapTotal:") {
+                swap_total_kb = value;
+            } else if (key == "SwapFree:") {
+                swap_free_kb = value;
+            }
+        }
+    }
+    meminfo_file.close();
+
+    info.total_physical     = mem_total_kb * 1024ULL;
+    info.available_physical = mem_available_kb * 1024ULL;
+    info.total_swap         = swap_total_kb * 1024ULL;
+    info.available_swap     = swap_free_kb * 1024ULL;
+
+#endif
+
+    return info;
+}
+
+// ---------------- CPU INFO ----------------
+CPUInfo get_cpu_info() {
+    CPUInfo cpu{};
+
+#if defined(_WIN32)
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+    cpu.cores = sysInfo.dwNumberOfProcessors;
+
+    // Architecture
+    switch (sysInfo.wProcessorArchitecture) {
+        case PROCESSOR_ARCHITECTURE_AMD64:
+            cpu.architecture = "x86_64";
+            break;
+        case PROCESSOR_ARCHITECTURE_INTEL:
+            cpu.architecture = "x86";
+            break;
+        case PROCESSOR_ARCHITECTURE_ARM:
+            cpu.architecture = "ARM";
+            break;
+        case PROCESSOR_ARCHITECTURE_ARM64:
+            cpu.architecture = "ARM64";
+            break;
+        default:
+            cpu.architecture = "Unknown";
+    }
+
+    // Frequency (MHz)
+    DWORD bufSize = sizeof(DWORD);
+    DWORD mhz     = 0;
+    HKEY  hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ, &hKey) ==
+        ERROR_SUCCESS) {
+        RegQueryValueExA(hKey, "~MHz", nullptr, nullptr, reinterpret_cast<LPBYTE>(&mhz), &bufSize);
+        RegCloseKey(hKey);
+    }
+    cpu.frequency_mhz = static_cast<double>(mhz);
+
+#elif defined(__linux__) || defined(__ANDROID__)
+    cpu.cores = sysconf(_SC_NPROCESSORS_ONLN);
+
+    // Architecture
+    struct utsname unameData;
+    uname(&unameData);
+    cpu.architecture = unameData.machine;
+
+    // Frequency from /proc/cpuinfo
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    std::string   line;
+    while (std::getline(cpuinfo, line)) {
+        if (line.find("cpu MHz") != std::string::npos) {
+            std::string        label;
+            double             mhz;
+            char               colon;
+            std::istringstream iss(line);
+            if (iss >> label >> colon >> mhz) {
+                cpu.frequency_mhz = mhz;
+                break;  // Take the first CPU's frequency
+            }
+        }
+    }
+    cpuinfo.close();
+
+#elif defined(__APPLE__)
+    // Core count
+    int    cores;
+    size_t size = sizeof(cores);
+    if (sysctlbyname("hw.ncpu", &cores, &size, nullptr, 0) != 0) {
+        throw std::runtime_error("Failed to get CPU core count on macOS");
+    }
+    cpu.cores = cores;
+
+    // Architecture
+    char arch[256];
+    size = sizeof(arch);
+    if (sysctlbyname("hw.machine", &arch, &size, nullptr, 0) != 0) {
+        throw std::runtime_error("Failed to get CPU architecture on macOS");
+    }
+    cpu.architecture = arch;
+
+    // Frequency (Hz → MHz)
+    uint64_t freq;
+    size = sizeof(freq);
+    if (sysctlbyname("hw.cpufrequency", &freq, &size, nullptr, 0) != 0) {
+        throw std::runtime_error("Failed to get CPU frequency on macOS");
+    }
+    cpu.frequency_mhz = static_cast<double>(freq) / 1'000'000.0;
+
+#endif
+
+    return cpu;
+}
 
 template <typename T>
 static T json_value(const json & body, const std::string & key, const T & default_value) {

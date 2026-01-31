@@ -15,12 +15,26 @@
 #include <nlohmann/json.hpp>
 #include "llama.h"
 #include "common.h"
+#include "server-context.h"
 
 #include "server-embedded.h"
 
 struct ModelContext {
-    std::shared_ptr<llama_model> model;
-    std::shared_ptr<llama_context> context;
+    // Default constructor
+    ModelContext() = default;
+
+    // User-defined copy constructor
+    ModelContext(const ModelContext & other) :
+        server_ctx(other.server_ctx),
+        state(other.state),
+        memoryUsageMB(other.memoryUsageMB),
+        fitted_n_ctx(other.fitted_n_ctx),
+        fitted_n_batch(other.fitted_n_batch),
+        fitted_n_gpu_layers(other.fitted_n_gpu_layers),
+        lastStateChange(other.lastStateChange),
+        history(other.history) {}
+
+    std::shared_ptr<server_context> server_ctx = std::make_shared<server_context>();
     server_model_status state = server_model_status::SERVER_MODEL_STATUS_UNLOADED;
     size_t memoryUsageMB = 0;
     int fitted_n_ctx = 0;
@@ -38,7 +52,9 @@ public:
     explicit ModelManager(size_t maxMemMB, size_t baseTenantQuotaMB = 4096)
         : maxMemoryMB(maxMemMB), baseTenantQuotaMB(baseTenantQuotaMB), currentMemoryMB(0) {}
 
-    void addStateChangeListener(StateChangeListener listener) {
+    void setMaxMemory(size_t maxMemMB) { maxMemoryMB = maxMemMB;}
+	
+	void addStateChangeListener(StateChangeListener listener) {
         std::lock_guard<std::mutex> lock(listenerMutex);
         listeners.push_back(std::move(listener));
     }
@@ -53,7 +69,7 @@ public:
             throw std::runtime_error("Model already loaded: " + tenantModelName);
         }
 
-		common_params args = std::move(params);
+		common_params args = params;
 		llama_model_params   mparams = common_model_params_to_llama(args);
 		llama_context_params cparams = common_context_params_to_llama(args);
 
@@ -63,6 +79,30 @@ public:
 		if (status != LLAMA_PARAMS_FIT_STATUS_SUCCESS) {
 			throw std::runtime_error("Failed to fit in free memory, model: " + params.model.path);
 		}
+
+        args.n_ctx = cparams.n_ctx;
+        args.n_batch = cparams.n_batch;
+        args.n_gpu_layers = mparams.n_gpu_layers;
+        args.fit_params   = false;  // fitted already
+        args.split_mode   = mparams.split_mode;
+        if (mparams.tensor_buft_overrides) {
+            args.tensor_buft_overrides.clear();
+            for (int i = 0; (mparams.tensor_buft_overrides + i) != NULL; i++) {
+                args.tensor_buft_overrides.push_back(*(mparams.tensor_buft_overrides + i));
+            }
+        }
+
+        if (mparams.tensor_split) {
+            float portionSum = 0.0f;
+            constexpr float LAST_EPSILON = 1.0f - FLT_EPSILON;
+            for (int i = 0; *(mparams.tensor_split + i) > 0.0f && portionSum < LAST_EPSILON; i++) {
+                if (i < 128) {
+                   args.tensor_split[i] = *(mparams.tensor_split + i);
+                }
+                portionSum += *(mparams.tensor_split + i);
+            }
+        }
+       
 
         size_t estimatedMem = estimateModelMemory(params.model.path);
         std::string tenant = tenantFromKey(tenantModelName);
@@ -76,28 +116,13 @@ public:
             throw std::runtime_error("Tenant quota exceeded for " + tenant +
                                      " (quota=" + std::to_string(effectiveQuota) + "MB)");
         }
+        auto & result = models.emplace(std::make_pair(tenantModelName, ModelContext()));
 
-        ModelContext ctx;
-        changeState(tenantModelName, ctx, server_model_status::SERVER_MODEL_STATUS_LOADING);
-		models.emplace(tenantModelName, ctx);
-        // models[tenantModelName] = std::move(ctx);
+        changeState(tenantModelName, result.first->second, server_model_status::SERVER_MODEL_STATUS_LOADING);
 
-        llama_model *rawModel = llama_load_model_from_file(params.model.path.c_str(), mparams);
-        if (!rawModel) {
-            // changeState(tenantModelName, models[tenantModelName], SERVER_MODEL_STATUS_FAILED);
+        if (!(models[tenantModelName].server_ctx->load_model(args))) {
             throw std::runtime_error("Failed to load model: " + params.model.path);
         }
-        std::shared_ptr<llama_model> modelPtr(rawModel, [](llama_model *m) { llama_free_model(m); });
-
-        llama_context *rawCtx = llama_new_context_with_model(modelPtr.get(), cparams);
-        if (!rawCtx) {
-            // changeState(tenantModelName, models[tenantModelName], SERVER_MODEL_STATUS_FAILED);
-            throw std::runtime_error("Failed to create context for model: " + tenantModelName);
-        }
-        std::shared_ptr<llama_context> ctxPtr(rawCtx, [](llama_context *ctx) { llama_free(ctx); });
-
-        models[tenantModelName].model = modelPtr;
-        models[tenantModelName].context = ctxPtr;
         models[tenantModelName].memoryUsageMB = estimatedMem;
         models[tenantModelName].fitted_n_ctx = cparams.n_ctx;
         models[tenantModelName].fitted_n_batch = cparams.n_batch;
@@ -114,11 +139,13 @@ public:
         std::unique_lock<std::shared_mutex> lock(globalMutex);
         auto it = models.find(tenantModelName);
         if (it == models.end()) throw std::runtime_error("Model not found");
+        ModelContext& model_ctx_ref = it->second;
+        auto server_ctx = model_ctx_ref.server_ctx;
+        server_ctx->terminate();
+        changeState(tenantModelName, model_ctx_ref, server_model_status::SERVER_MODEL_STATUS_UNLOADED);
 
-        changeState(tenantModelName, it->second, server_model_status::SERVER_MODEL_STATUS_UNLOADED);
-
-        currentMemoryMB -= it->second.memoryUsageMB;
-        tenantMemoryUsage[tenantFromKey(tenantModelName)] -= it->second.memoryUsageMB;
+        currentMemoryMB -= model_ctx_ref.memoryUsageMB;
+        tenantMemoryUsage[tenantFromKey(tenantModelName)] -= model_ctx_ref.memoryUsageMB;
         models.erase(it);
     }
 
@@ -129,7 +156,7 @@ public:
         return it->second.state;
     }
 
-    ModelContext &getModelContext(const std::string &tenantModelName) {
+    ModelContext& getModelContext(const std::string &tenantModelName) {
         std::shared_lock<std::shared_mutex> lock(globalMutex);
         auto it = models.find(tenantModelName);
         if (it == models.end()) throw std::runtime_error("Model not found");

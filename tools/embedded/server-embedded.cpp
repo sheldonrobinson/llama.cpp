@@ -93,6 +93,15 @@ static void unset_reserved_args(common_preset & preset, bool unset_model_args) {
     }
 }
 
+void server_model_meta::update_args(common_preset_context & ctx_presets, std::string bin_path) {
+	// update params
+	unset_reserved_args(preset, false);
+	preset.set_option(ctx_presets, "LLAMA_ARG_ALIAS", name);
+	// TODO: maybe validate preset before rendering ?
+	// render args
+	args = preset.to_args(bin_path);
+}
+
 //
 // server_models
 //
@@ -300,7 +309,7 @@ void server_models::unload_lru() {
     }
 }
 
-static ModelManager g_modelManager(16384); // 16 GB limit
+static ModelManager g_modelManager(4096); // 4GB limit
 
 void server_models::load(const std::string & name) {
     if (!has_model(name)) {
@@ -324,14 +333,19 @@ void server_models::load(const std::string & name) {
 	
 	{
         SRV_INF("creating server instance with name=%s\n", inst.meta.name.c_str());
-
         inst.meta.update_args(ctx_preset, bin_path); // render args
-		
 		try {
 			g_modelManager.loadModel(name, base_params);
 		} catch(...){
 			throw std::runtime_error("failed to load model");
 		}
+
+        inst.th = std::thread([this, name]() {
+            ModelContext model_ctx  = g_modelManager.getModelContext(name);
+            std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
+            server_ctx->start_loop();
+        });
+        inst.th.detach();
     }
 	mapping[name] = std::move(inst);
     cv.notify_all();
@@ -381,20 +395,23 @@ static bool is_autoload(const common_params & params, const server_core_req & re
     }
 }
 
-
 void server_models::unload(const std::string & name) {
     auto it = mapping.find(name);
     if (it != mapping.end()) {
 		auto & inst = it->second;
         if (inst.meta.is_active()) {
             SRV_INF("unloading model instance name=%s\n", name.c_str());
+            int exit_code = 0;
             try{
 				g_modelManager.unloadModel(name);
-				update_status(name,  server_model_status::SERVER_MODEL_STATUS_UNLOADED, 0);
 			}catch(...){
-				update_status(name,  inst.meta.status, -1);
+                SRV_ERR("failed to unload model instance name=%s\n", name.c_str());
+                exit_code = -1;
 			}
-			mapping[name] = std::move(inst);
+            if (inst.th.joinable()) {
+                inst.th.join();
+            }
+            update_status(name, server_model_status::SERVER_MODEL_STATUS_UNLOADED, exit_code);
             // status change will be handled by the managing thread
         } else {
             SRV_WRN("model instance name=%s is not loaded\n", name.c_str());
@@ -403,19 +420,30 @@ void server_models::unload(const std::string & name) {
 }
 
 void server_models::unload_all() {
-		for (auto & [name, inst] : mapping) {
-            if (inst.meta.is_active()) {
-				SRV_INF("unloading model instance name=%s\n", name.c_str());
-				try{
-					g_modelManager.unloadModel(name);
-					update_status(name,  server_model_status::SERVER_MODEL_STATUS_UNLOADED, 0);
-				}catch(...){
-					update_status(name,  inst.meta.status, -1);
-				}
-			} else {
-				SRV_WRN("model instance name=%s is not loaded\n", name.c_str());
+    std::vector<std::thread> to_join;
+	for (auto & [name, inst] : mapping) {
+        if (inst.meta.is_active()) {
+			SRV_INF("unloading model instance name=%s\n", name.c_str());
+            int exit_code = 0;
+			try{
+				g_modelManager.unloadModel(name);
+				update_status(name,  server_model_status::SERVER_MODEL_STATUS_UNLOADED, 0);
+			}catch(...){
+                SRV_ERR("failed to unload model instance name=%s\n", name.c_str());
+                exit_code = -1;
 			}
+            update_status(name, server_model_status::SERVER_MODEL_STATUS_UNLOADED, exit_code);
+            // moving the thread to join list to avoid deadlock
+            to_join.push_back(std::move(inst.th));
+		} else {
+			SRV_WRN("model instance name=%s is not loaded\n", name.c_str());
 		}
+	}
+    for (auto & th : to_join) {
+        if (th.joinable()) {
+            th.join();
+        }
+    }
 }
 
 void server_models::update_status(const std::string & name, server_model_status status, int exit_code) {
@@ -464,6 +492,28 @@ bool server_models::ensure_model_loaded(const std::string & name) {
     }
 
     return true;
+}
+
+server_core_res_ptr server_models::proxy_request(const server_core_req & req,
+                                                 const std::string &     method,
+                                                 const std::string &     name,
+                                                 bool                    update_last_used) {
+    auto meta = get_meta(name);
+    if (!meta.has_value()) {
+        throw std::runtime_error("model name=" + name + " is not found");
+    }
+    if (meta->status != SERVER_MODEL_STATUS_LOADED) {
+        throw std::invalid_argument("model name=" + name + " is not loaded");
+    }
+    if (update_last_used) {
+        std::unique_lock<std::mutex> lk(mutex);
+        mapping[name].meta.last_used = ggml_time_ms();
+    }
+
+    auto proxy =
+        std::make_unique<server_core_proxy>(method, req.path, req.metadata, req.body,
+                                            req.should_stop, base_params.timeout_read, base_params.timeout_write);
+    return proxy;
 }
 
 void server_models_routes::init_routes() {
@@ -623,7 +673,15 @@ static server_core_context::handler_t ex_wrapper(server_core_context::handler_t 
 }
 
 void server_embedded_start(const common_params& args, server_status_callback* callback){
-	
+	try {
+       auto& mem_info = get_memory_info();
+        size_t total_mem = mem_info.total_physical/(1024*1024);
+       if (total_mem > 4096) {
+            g_modelManager.setMaxMemory(total_mem);
+       }
+    } catch (const std::exception & e) {
+        LOG_WRN("%s: failed to get system memory info: %s\n", __func__, e.what());
+    }
 	common_params params = std::move(args);
 	// validate batch size for embeddings
     // embeddings require all tokens to be processed in a single ubatch
@@ -647,26 +705,22 @@ void server_embedded_start(const common_params& args, server_status_callback* ca
     }
 
     common_init();
-	
-	// struct that contains llama context and inference
-    server_context ctx_server;
 
     llama_backend_init();
     llama_numa_init(params.numa);
 
-    LOG_INF("system info: n_threads = %d, n_threads_batch = %d, total_threads = %d\n", params.cpuparams.n_threads, params.cpuparams_batch.n_threads, std::thread::hardware_concurrency());
-    LOG_INF("\n");
-    LOG_INF("%s\n", common_params_get_system_info(params).c_str());
-    LOG_INF("\n");
+    g_modelManager.loadModel(params.model.name, params);
+
+    // struct that contains llama context and inference
+    ModelContext model_ctx = g_modelManager.getModelContext(params.model.name);
 
 	server_core_context ctx_http;
     if (!ctx_http.init(params)) {
-        LOG_ERR("%s: failed to initialize HTTP server\n", __func__);
         return;
     }
 	
 	// register API routes
-    server_routes routes(params, ctx_server);
+    server_routes routes(params, *model_ctx.server_ctx);
 	
 	ctx_http.get ("/health",              ex_wrapper(routes.get_health)); // public endpoint (no API key check)
     ctx_http.get ("/v1/health",           ex_wrapper(routes.get_health)); // public endpoint (no API key check)
@@ -702,29 +756,41 @@ void server_embedded_start(const common_params& args, server_status_callback* ca
     // Save & load slots
     ctx_http.get ("/slots",               ex_wrapper(routes.get_slots));
     ctx_http.post("/slots/:id_slot",      ex_wrapper(routes.post_slots));
-	
+
+    shutdown_handler = [&ctx_http](int) {
+        ctx_http.stop();
+        auto models = g_modelManager.listModels();
+        for (const auto & name : models) {
+            SRV_INF("%s: unloading model %s\n", __func__, name.c_str());
+            g_modelManager.unloadModel(name);
+        }
+        llama_backend_free();
+    };
 	
 	// setup clean up function, to be called before exit
-    std::function<void()> clean_up = [&ctx_http, &ctx_server]() {
-            SRV_INF("%s: cleaning up before exit...\n", __func__);
-            ctx_http.stop();
-            ctx_server.terminate();
-            llama_backend_free();
-    };
+    //std::function<void()> clean_up = [&ctx_http]() {
+    //        SRV_INF("%s: cleaning up before exit...\n", __func__);
+    //        ctx_http.stop();
+    //        auto models = g_modelManager.listModels();
+    //        for (const auto& name : models){
+    //            SRV_INF("%s: unloading model %s\n", __func__, name.c_str());
+    //            g_modelManager.unloadModel(name);
+    //        }
+    //        llama_backend_free();
+    //};
 	
 	
 	// start the HTTP server before loading the model to be able to serve /health requests
 	if (!ctx_http.start()) {
-		clean_up();
+        shutdown_handler(-1);
 		LOG_ERR("%s: exiting due to HTTP server error\n", __func__);
 		return;
 	}
 
 	// load the model
 	LOG_INF("%s: loading model\n", __func__);
-
-	if (!ctx_server.load_model(params)) {
-		clean_up();
+	if (!(*model_ctx.server_ctx).load_model(params)) {
+        shutdown_handler(-1);
 		if (ctx_http.thread.joinable()) {
 			ctx_http.thread.join();
 		}
@@ -732,26 +798,21 @@ void server_embedded_start(const common_params& args, server_status_callback* ca
 		return;
 	}
 
-	routes.update_meta(ctx_server);
+	routes.update_meta(*model_ctx.server_ctx);
 	ctx_http.is_ready.store(true);
 
 	LOG_INF("%s: model loaded\n", __func__);
-	
-	shutdown_handler = [&](int) {
-		// this will unblock start_loop()
-		ctx_server.terminate();
-	};
-	
+
 	// starting
 	is_terminating.clear();
 	
 	// this call blocks the main thread until queue_tasks.terminate() is called
-	ctx_server.start_loop();
+    // (*model_ctx.server_ctx).start_loop();
 
-	clean_up();
-	if (ctx_http.thread.joinable()) {
-		ctx_http.thread.join();
-	}
+	//clean_up();
+	//if (ctx_http.thread.joinable()) {
+	//	ctx_http.thread.join();
+	//}
 }
 
 
@@ -762,4 +823,164 @@ void server_embedded_stop(){
 	if(shutdown_handler != nullptr){
 		shutdown_handler(0);
 	}
+}
+
+static std::string to_lower_copy(const std::string & value) {
+    std::string lowered(value.size(), '\0');
+    std::transform(value.begin(), value.end(), lowered.begin(), [](unsigned char c) { return std::tolower(c); });
+    return lowered;
+}
+
+static bool should_strip_proxy_header(const std::string & header_name) {
+    // Headers that get duplicated when router forwards child responses
+    if (header_name == "server" || header_name == "transfer-encoding" ||
+        header_name == "content-length" ||  // quick fix for https://github.com/ggml-org/llama.cpp/issues/17710
+        header_name == "keep-alive") {
+        return true;
+    }
+
+    // Router injects CORS, child also sends them: duplicate
+    if (header_name.rfind("access-control-", 0) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+static std::atomic<bool> g_is_interrupted = false;
+
+static bool should_stop() {
+    return g_is_interrupted.load();
+}
+
+server_core_proxy::server_core_proxy(const std::string &                        method,
+                                     const std::string &                        path,
+                                     const std::map<std::string, std::string> & headers,
+                                     const std::string &                        body,
+                                     const std::function<bool()>                should_stop,
+                                     int32_t                                    timeout_read,
+                                     int32_t                                    timeout_write) {
+    std::string name = json_value(body, "model", std::string());
+    ModelContext model_ctx = g_modelManager.getModelContext(name);
+    std::shared_ptr<server_context> server_ctx   = model_ctx.server_ctx;
+    // shared between reader and writer threads
+    server_response_reader rd           = server_ctx->get_response_reader();
+    auto meta = server_ctx->get_meta();
+    auto format_chat  = [&meta, &body](){
+            auto &      server_chat_params = meta.chat_params;
+            json        messages           = json_value(body, "messages", json::array());
+            json        tools              = json_value(body, "tools", json());
+            bool        has_tools          = tools.is_array() && !tools.empty();
+            common_chat_tool_choice tool_choice  = common_chat_tool_choice_parse_oaicompat(json_value(body, "tool_choice", std::string("auto")));
+            json        json_schema        = json_value(body, "json_schema", json());
+            std::string grammar            = json_value(body, "grammar", std::string());
+
+            json response_format = json_value(body, "response_format", json());
+            // Handle "response_format" field
+            if (!response_format.empty()) {
+                std::string response_type = json_value(response_format, "type", std::string());
+                if (response_type == "json_object") {
+                    json_schema = json_value(response_format, "schema", json::object());
+                } else if (response_type == "json_schema") {
+                    auto schema_wrapper = json_value(response_format, "json_schema", json::object());
+                    json_schema         = json_value(schema_wrapper, "schema", json::object());
+                } else if (!response_type.empty() && response_type != "text") {
+                    throw std::invalid_argument(
+                        "response_format type must be one of \"text\" or \"json_object\", but got: " + response_type);
+                }
+            }
+
+            std::string reasoning_format = json_value(body, "reasoning_format", std::string("none"));
+            // merge the template args provided from command line with the args provided in the user request
+            auto        chat_template_kwargs_object = json_value(body, "chat_template_kwargs", json::object());
+            
+
+            common_chat_templates_inputs inputs;
+            inputs.messages              = common_chat_msgs_parse_oaicompat(messages);
+            inputs.tools                 = common_chat_tools_parse_oaicompat(tools);
+            inputs.tool_choice           = tool_choice;
+            inputs.json_schema           = json_schema.is_null() ? "" : json_schema.dump();
+            inputs.grammar               = grammar;
+            inputs.use_jinja             = has_tools || tool_choice != COMMON_CHAT_TOOL_CHOICE_NONE || server_chat_params.use_jinja;
+            inputs.parallel_tool_calls   = json_value(body, "parallel_tool_calls", false);
+            inputs.add_generation_prompt = json_value(body, "add_generation_prompt", true);
+            inputs.enable_thinking       = server_chat_params.enable_thinking;
+            inputs.reasoning_format      = common_reasoning_format_from_name(reasoning_format);
+            for (const auto & item : chat_template_kwargs_object.items()) {
+                inputs.chat_template_kwargs[item.key()] = item.value().dump();
+            }
+            auto enable_thinking_kwarg =
+                json_value(inputs.chat_template_kwargs, "enable_thinking", std::string("false"));
+            if (enable_thinking_kwarg == "true") {
+                inputs.enable_thinking = true;
+            } else if (enable_thinking_kwarg == "false") {
+                inputs.enable_thinking = false;
+            } else if (!enable_thinking_kwarg.empty() && enable_thinking_kwarg[0] == '"') {
+                inputs.enable_thinking = server_chat_params.enable_thinking;
+            }
+            // Apply chat template to the list of messages
+            return common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
+        };
+
+    common_chat_params chat_params = format_chat();
+
+    std::vector<raw_buffer> input_files;
+    {
+        // handle file inputs
+        json files = json_value(body, "files", json::array());
+        if (files.is_array()) {
+            for (const auto & file_entry : files) {
+                std::string filename = json_value(file_entry, "filename", std::string());
+                std::string content  = json_value(file_entry, "content", std::string());
+                if (!filename.empty() && !content.empty()) {
+                    input_files.push_back(std::vector<uint8_t>(content.begin(), content.end()));
+                }
+            }
+        }
+    }
+    task_params defaults;
+    {
+        defaults.stream            = true;  // make sure we always use streaming mode
+        defaults.timings_per_token = true;  // in order to get timings even when we cancel mid-way
+        // defaults.return_progress = true; // TODO: show progress
+    }
+
+    {
+        // TODO: reduce some copies here in the future
+        server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
+        task.id          = rd.get_new_id();
+        task.index       = 0;
+        task.params      = defaults;            // copy
+        task.cli_prompt  = chat_params.prompt;  // copy
+        task.cli_files   = input_files;         // copy
+
+        // chat template settings
+        task.params.chat_parser_params                  = common_chat_parser_params(chat_params);
+        task.params.chat_parser_params.reasoning_format = common_reasoning_format_from_name(json_value(body, "reasoning_format", std::string("none")));
+        if (!chat_params.parser.empty()) {
+            task.params.chat_parser_params.parser.load(chat_params.parser);
+        }
+
+        rd.post_task({ std::move(task) });
+    }
+
+    //std::thread inference_thread([&server_ctx]() { server_ctx->start_loop(); });
+
+    //server_task_result_ptr result = rd.next(should_stop);
+
+    //while (result) {
+    //    if (should_stop()) {
+    //        break;
+    //    }
+    //    auto res_final = dynamic_cast<server_task_result_cmpl_final *>(result.get());
+    //    if (res_final) {
+    //        break;
+    //    }
+    //    result = rd.next(should_stop);
+    // }
+    // g_is_interrupted.store(false);
+
+
+    //server_ctx->terminate();
+    //inference_thread.join();
 }

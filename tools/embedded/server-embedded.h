@@ -102,14 +102,7 @@ struct server_model_meta {
         return status == SERVER_MODEL_STATUS_UNLOADED && exit_code != 0;
     }
 
-    void update_args(common_preset_context & ctx_presets, std::string bin_path) {
-		// update params
-		unset_reserved_args(preset, false);
-		preset.set_option(ctx_presets, "LLAMA_ARG_ALIAS", name);
-		// TODO: maybe validate preset before rendering ?
-		// render args
-		args = preset.to_args(bin_path);
-	}
+    void update_args(common_preset_context & ctx_presets, std::string bin_path);
 };
 
 struct server_models {
@@ -167,7 +160,7 @@ public:
     // return when the model is loaded or failed to load
     void wait_until_loaded(const std::string & name);
 	
-	// proxy an HTTP request to the model instance
+	// send request to the model instance
     server_core_res_ptr proxy_request(const server_core_req & req, const std::string & method, const std::string & name, bool update_last_used);
 
     // load the model if not loaded, otherwise do nothing (thread-safe)
@@ -191,6 +184,37 @@ struct server_models_routes {
     server_core_context::handler_t get_router_models;
     server_core_context::handler_t post_router_models_load;
     server_core_context::handler_t post_router_models_unload;
+};
+
+/**
+ * A simple proxy that forwards requests to another server
+ * and relays the responses back.
+ */
+struct server_core_proxy : server_core_res {
+    std::function<void()> cleanup = nullptr;
+  public:
+    server_core_proxy(const std::string &                        method,
+                      const std::string &                        path,
+                      const std::map<std::string, std::string> & headers,
+                      const std::string &                        body,
+                      const std::function<bool()>                should_stop,
+                      int32_t                                    timeout_read,
+                      int32_t                                    timeout_write);
+
+    ~server_core_proxy() {
+        if (cleanup) {
+            cleanup();
+        }
+    }
+  private:
+    std::thread thread;
+
+    struct msg_t {
+        std::map<std::string, std::string> headers;
+        int                                status = 0;
+        std::string                        data;
+        std::string                        content_type;
+    };
 };
 
 LLAMA_API void server_embedded_start(const common_params& params, server_status_callback* callback);

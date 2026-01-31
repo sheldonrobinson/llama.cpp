@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 #include <thread>
+#include "uv-memory-server.hpp"
 
 struct common_params;
 
@@ -56,8 +57,7 @@ typedef struct server_core_req {
 
 
 struct server_core_context {
-    class Impl;
-    std::unique_ptr<Impl> pimpl;
+    std::unique_ptr<UVMemoryServer> srv;
 
     std::thread thread; // server thread
     std::atomic<bool> is_ready = false;
