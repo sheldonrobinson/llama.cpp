@@ -731,7 +731,8 @@ void server_models_routes::init_routes() {
 }
 
 static std::function<void(int)> shutdown_handler;
-static std::atomic_flag is_terminating = ATOMIC_FLAG_INIT;
+static std::atomic_flag g_is_terminating = ATOMIC_FLAG_INIT;
+static std::atomic<bool> g_is_interrupted = false;
 
 // this is to make sure handler_t never throws exceptions; instead, it returns an error response
 static server_core_context::handler_t ex_wrapper(server_core_context::handler_t func) {
@@ -770,7 +771,7 @@ static server_core_context::handler_t ex_wrapper(server_core_context::handler_t 
 
 static std::unordered_map<std::string, server_core_context*> g_servers;
 
-void server_embedded_model_init(const common_params & args) {
+void server_embedded_inference_svc(const common_params & args) {
     common_params params = args;
     // validate batch size for embeddings
     // embeddings require all tokens to be processed in a single ubatch
@@ -805,8 +806,6 @@ void server_embedded_model_init(const common_params & args) {
     if (!result.second) {
         return;
     }
-
-    // auto & ctx_http = result.first->second;
     
     if (!ctx_http.init(params)) {
         g_servers.erase(params.model.name);
@@ -928,14 +927,14 @@ void server_embedded_start(ggml_numa_strategy numa, server_status_callback * cal
     };
 	
 	// starting
-	is_terminating.clear();
+	g_is_terminating.clear();
 }
 
-
 void server_embedded_stop(){
-	if (is_terminating.test_and_set()) {
+	if (g_is_terminating.test_and_set()) {
         return;
     }
+    g_is_interrupted.store(true);
 	if(shutdown_handler != nullptr){
 		shutdown_handler(0);
 	}
@@ -963,10 +962,133 @@ static bool should_strip_proxy_header(const std::string & header_name) {
     return false;
 }
 
-static std::atomic<bool> g_is_interrupted = false;
+void server_embedded_submit(std::vector<common_chat_msg>         messages,
+                            std::function<void(std::string)>     streaming_response_cb,
+                            std::function<void(common_chat_msg)> response_cb);
 
 static bool should_stop() {
     return g_is_interrupted.load();
+}
+
+void server_embedded_submit(std::string& name,
+                            std::vector<common_chat_msg>  messages,
+                            std::vector<common_chat_tool> tools,
+                            std::function<void(std::string)> streaming_response_cb,
+                            std::function<void(common_chat_msg_with_timings)> response_with_timings_cb) {
+    ModelContext                    model_ctx  = g_modelManager.getModelContext(name);
+    std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
+    // shared between reader and writer threads
+    server_context_meta &           meta       = server_ctx->get_meta();
+    server_chat_params &            server_chat_params = meta.chat_params;
+    common_chat_templates_inputs inputs;
+    {
+        bool use_jinja               = !tools.empty() || server_chat_params.use_jinja;
+        inputs.messages              = messages;
+        inputs.tools                 = tools;
+        inputs.use_jinja             = use_jinja;
+        inputs.parallel_tool_calls   = false;
+        inputs.add_generation_prompt = true;
+        auto chat_template_kwargs    = server_chat_params.chat_template_kwargs;
+        for (const auto & [key, value] : chat_template_kwargs) {
+            inputs.chat_template_kwargs[key] = value;
+        }
+        inputs.tool_choice         = !tools.empty() ? common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
+                                                      common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
+        inputs.reasoning_format    = server_chat_params.reasoning_format;
+        auto enable_thinking_kwarg = json_value(chat_template_kwargs, "enable_thinking", std::string("false"));
+        if (enable_thinking_kwarg == "true") {
+            inputs.enable_thinking = use_jinja;
+        } else if (enable_thinking_kwarg == "false") {
+            inputs.enable_thinking = false;
+        } else {
+            inputs.enable_thinking = server_chat_params.enable_thinking;
+        }
+    }
+    common_chat_params chat_params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
+    task_params        defaults;
+    defaults.stream            = true;  // make sure we always use streaming mode
+    defaults.timings_per_token = true;  // in order to get timings even when we cancel mid-way
+    auto & generate_completion = [&]() {
+        result_timings out_timings;
+        server_response_reader rd = server_ctx->get_response_reader();
+        server_task            task = server_task(SERVER_TASK_TYPE_COMPLETION);
+        {
+            std::vector<raw_buffer> input_files;
+            // TODO: reduce some copies here in the future
+            task.id                      = rd.get_new_id();
+            task.index                   = 0;
+            task.params                  = defaults;            // copy
+            task.cli_prompt              = chat_params.prompt;  // copy
+            task.cli_files               = input_files;         // copy
+            task.cli                     = true;
+
+            // chat template settings
+            task.params.chat_parser_params                  = common_chat_parser_params(chat_params);
+            task.params.chat_parser_params.reasoning_format = server_chat_params.reasoning_format;
+            if (!chat_params.parser.empty()) {
+                task.params.chat_parser_params.parser.load(chat_params.parser);
+            }
+
+        }
+        rd.post_task({ std::move(task) });
+        // wait for first result
+        server_task_result_ptr result = rd.next(should_stop);
+        std::string            curr_content, reasoning_content;
+        bool                   is_thinking = false;
+
+        while (result) {
+            if (should_stop()) {
+                break;
+            }
+            if (result->is_error()) {
+                json err_data = result->to_json();
+                if (err_data.contains("message")) {
+                    LOG_ERR("Error: %s\n", err_data["message"].get<std::string>().c_str());
+                } else {
+                    LOG_ERR("Error: %s\n", err_data.dump().c_str());
+                }
+                return curr_content;
+            }
+            auto res_partial = dynamic_cast<server_task_result_cmpl_partial *>(result.get());
+            if (res_partial) {
+                out_timings = std::move(res_partial->timings);
+                for (const auto & diff : res_partial->oaicompat_msg_diffs) {
+                    if (!diff.content_delta.empty()) {
+                        if (is_thinking) {
+                            is_thinking = false;
+                        }
+                        if (streaming_response_cb) {
+                            streaming_response_cb(diff.content_delta);
+                        }
+                        curr_content += diff.content_delta;
+                    }
+                    if (!diff.reasoning_content_delta.empty()) {
+                        is_thinking = true;
+                        if (streaming_response_cb) {
+                            streaming_response_cb(diff.reasoning_content_delta);
+                        }
+                        reasoning_content += diff.reasoning_content_delta;
+                    }
+                }
+            }
+            auto res_final = dynamic_cast<server_task_result_cmpl_final *>(result.get());
+            if (res_final) {
+                out_timings = std::move(res_final->timings);
+                break;
+            }
+            result = rd.next(should_stop);
+        }
+       
+        // server_response_reader automatically cancels pending tasks upon destruction
+        g_is_interrupted.store(false);
+        if (response_with_timings_cb) {
+            common_chat_msg message = common_chat_parse(curr_content, g_is_interrupted.load(), task.params.chat_parser_params);
+            message.reasoning_content = reasoning_content;
+            common_chat_msg_with_timings msg_with_timings(message, out_timings);
+            response_with_timings_cb(msg_with_timings);
+        }
+    };
+    generate_completion();
 }
 
 server_core_proxy::server_core_proxy(const std::string &                        method,
@@ -1008,19 +1130,20 @@ server_core_proxy::server_core_proxy(const std::string &                        
 
             std::string reasoning_format = json_value(body, "reasoning_format", std::string("none"));
             // merge the template args provided from command line with the args provided in the user request
-            auto        chat_template_kwargs_object = json_value(body, "chat_template_kwargs", json::object());
+            auto chat_template_kwargs_object = json_value(body, "chat_template_kwargs", json::object());
             
 
             common_chat_templates_inputs inputs;
+            bool use_jinja = has_tools || tool_choice != COMMON_CHAT_TOOL_CHOICE_NONE || server_chat_params.use_jinja;
             inputs.messages              = common_chat_msgs_parse_oaicompat(messages);
             inputs.tools                 = common_chat_tools_parse_oaicompat(tools);
-            inputs.tool_choice           = tool_choice;
+            inputs.tool_choice = has_tools && tool_choice != COMMON_CHAT_TOOL_CHOICE_NONE ? tool_choice :
+                                  has_tools ? COMMON_CHAT_TOOL_CHOICE_AUTO : COMMON_CHAT_TOOL_CHOICE_NONE;
             inputs.json_schema           = json_schema.is_null() ? "" : json_schema.dump();
             inputs.grammar               = grammar;
-            inputs.use_jinja             = has_tools || tool_choice != COMMON_CHAT_TOOL_CHOICE_NONE || server_chat_params.use_jinja;
+            inputs.use_jinja             = use_jinja;
             inputs.parallel_tool_calls   = json_value(body, "parallel_tool_calls", false);
             inputs.add_generation_prompt = json_value(body, "add_generation_prompt", true);
-            inputs.enable_thinking       = server_chat_params.enable_thinking;
             inputs.reasoning_format      = common_reasoning_format_from_name(reasoning_format);
             for (const auto & item : chat_template_kwargs_object.items()) {
                 inputs.chat_template_kwargs[item.key()] = item.value().dump();
@@ -1028,10 +1151,10 @@ server_core_proxy::server_core_proxy(const std::string &                        
             auto enable_thinking_kwarg =
                 json_value(inputs.chat_template_kwargs, "enable_thinking", std::string("false"));
             if (enable_thinking_kwarg == "true") {
-                inputs.enable_thinking = true;
+                inputs.enable_thinking = use_jinja;
             } else if (enable_thinking_kwarg == "false") {
                 inputs.enable_thinking = false;
-            } else if (!enable_thinking_kwarg.empty() && enable_thinking_kwarg[0] == '"') {
+            } else {
                 inputs.enable_thinking = server_chat_params.enable_thinking;
             }
             // Apply chat template to the list of messages
@@ -1085,23 +1208,7 @@ server_core_proxy::server_core_proxy(const std::string &                        
             server_ctx->start_loop(); }
         );
     }
-    
 
-    //server_task_result_ptr result = rd.next(should_stop);
-
-    //while (result) {
-    //    if (should_stop()) {
-    //        break;
-    //    }
-    //    auto res_final = dynamic_cast<server_task_result_cmpl_final *>(result.get());
-    //    if (res_final) {
-    //        break;
-    //    }
-    //    result = rd.next(should_stop);
-    // }
-    // g_is_interrupted.store(false);
-
-
-    //server_ctx->terminate();
-    //inference_thread.join();
+    server_core_context* core_ctx = g_servers[name];
+    std::shared_ptr<MemoryDuplexStream>  conn = core_ctx->srv->create_connection();
 }

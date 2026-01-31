@@ -4,6 +4,7 @@
 #include "preset.h"
 #include "server-common.h"
 #include "server-core.h"
+#include "server-task.h"
 
 #include <mutex>
 #include <condition_variable>
@@ -217,11 +218,31 @@ struct server_core_proxy : server_core_res {
     };
 };
 
+struct common_chat_msg_with_timings {
+    common_chat_msg message;
+    result_timings  timings;
+    common_chat_msg_with_timings()  = default;
+    ~common_chat_msg_with_timings() = default;
+
+    common_chat_msg_with_timings(common_chat_msg msg, result_timings metrics) :
+        message(std::move(msg)),
+        timings(std::move(metrics)) {}
+
+    common_chat_msg_with_timings(common_chat_msg_with_timings & other) :
+        message(other.message),
+        timings(other.timings) {}
+
+};
+
+void server_embedded_inference_svc(const common_params & args);
+
 void server_embedded_start(const common_params& params, server_status_callback* callback);
 
 void server_embedded_stop();
 
-void server_embedded_submit(std::vector<common_chat_msg>     messages,
-                                      std::function<void(std::string)> streaming_response_cb,
-                                      std::function<void(common_chat_msg)> response_cb);
+void server_embedded_submit(std::string model,
+                            std::vector<common_chat_msg>     messages,
+                            std::vector<common_chat_tool>        tools,
+                            std::function<void(std::string)> streaming_response_cb,
+                            std::function<void(common_chat_msg_with_timings)> response_with_timings_cb);
 

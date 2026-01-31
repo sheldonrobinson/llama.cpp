@@ -48,12 +48,12 @@ public:
         close();
         uv_close(reinterpret_cast<uv_handle_t*>(&async_handle_), nullptr);
     }
-	
-	bool is_readable() const override { return true; }
 
-	bool wait_readable() const override { return true; }
+    bool is_readable() const override { return true; }
 
-	bool wait_writable() const override { return true; }
+    bool wait_readable() const override { return true; }
+
+    bool wait_writable() const override { return true; }
 
     // ====== Server reads from client ======
     ssize_t read(char* ptr, size_t size) override {
@@ -102,15 +102,15 @@ public:
         ip = "0.0.0.0";
         port = 0;
     }
-	
-	void get_local_ip_and_port(std::string & ip, int & port) const override {
-		ip   = "127.0.0.1";
-		port = 0;
-	}
 
-	socket_t socket() const override { return 0; }
+    void get_local_ip_and_port(std::string & ip, int & port) const override {
+        ip   = "127.0.0.1";
+        port = 0;
+    }
 
-	time_t duration() const override { return 0; }
+    socket_t socket() const override { return 0; }
+
+    time_t duration() const override { return 0; }
 
     // ====== Client sends to server ======
     void send_to_server(const std::string& data) {
