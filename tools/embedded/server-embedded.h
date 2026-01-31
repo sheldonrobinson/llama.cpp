@@ -58,7 +58,8 @@ extern "C"
 enum server_model_status {
     SERVER_MODEL_STATUS_UNLOADED,
     SERVER_MODEL_STATUS_LOADING,
-    SERVER_MODEL_STATUS_LOADED
+    SERVER_MODEL_STATUS_LOADED,
+	SERVER_MODEL_STATUS_INVALID
 };
 
 static server_model_status server_model_status_from_string(const std::string & status_str) {
@@ -71,7 +72,7 @@ static server_model_status server_model_status_from_string(const std::string & s
     if (status_str == "loaded") {
         return server_model_status::SERVER_MODEL_STATUS_LOADED;
     }
-    throw std::runtime_error("invalid server model status");
+    return server_model_status::SERVER_MODEL_STATUS_INVALID;
 }
 
 static std::string server_model_status_to_string(server_model_status status) {
@@ -79,7 +80,7 @@ static std::string server_model_status_to_string(server_model_status status) {
         case SERVER_MODEL_STATUS_UNLOADED: return "unloaded";
         case SERVER_MODEL_STATUS_LOADING:  return "loading";
         case SERVER_MODEL_STATUS_LOADED:   return "loaded";
-        default:                           return "unknown";
+        default:                           return "invalid";
     }
 }
 
@@ -114,7 +115,7 @@ struct server_model_meta {
     }
 
     bool is_failed() const {
-        return status == SERVER_MODEL_STATUS_UNLOADED && exit_code != 0;
+        return (status == SERVER_MODEL_STATUS_UNLOADED && exit_code != 0) || status == SERVER_MODEL_STATUS_INVALID;
     }
 
     void update_args(common_preset_context & ctx_presets, std::string bin_path);

@@ -433,7 +433,9 @@ void server_models::load(const std::string & name) {
 		try {
 			g_modelManager.loadModel(name, base_params);
 		} catch(...){
-			throw std::runtime_error("failed to load model");
+			update_status(name,  server_model_status::SERVER_MODEL_STATUS_UNLOADED, -1);
+			SRV_ERR("failed to load model %s\n", name.c_str());
+			return;
 		}
 
         inst.th = std::thread([this, name]() {
@@ -497,12 +499,12 @@ void server_models::unload(const std::string & name) {
 		auto & inst = it->second;
         if (inst.meta.is_active()) {
             SRV_INF("unloading model instance name=%s\n", name.c_str());
-            int exit_code = 0;
             try{
 				g_modelManager.unloadModel(name);
+				update_status(name,  server_model_status::SERVER_MODEL_STATUS_UNLOADED, 0);
 			}catch(...){
                 SRV_ERR("failed to unload model instance name=%s\n", name.c_str());
-                exit_code = -1;
+				update_status(name, server_model_status::SERVER_MODEL_STATUS_INVALID, -1);
 			}
             if (inst.th.joinable()) {
                 inst.th.join();
@@ -520,15 +522,14 @@ void server_models::unload_all() {
 	for (auto & [name, inst] : mapping) {
         if (inst.meta.is_active()) {
 			SRV_INF("unloading model instance name=%s\n", name.c_str());
-            int exit_code = 0;
 			try{
 				g_modelManager.unloadModel(name);
 				update_status(name,  server_model_status::SERVER_MODEL_STATUS_UNLOADED, 0);
 			}catch(...){
                 SRV_ERR("failed to unload model instance name=%s\n", name.c_str());
-                exit_code = -1;
+                update_status(name, server_model_status::SERVER_MODEL_STATUS_INVALID, -1);
 			}
-            update_status(name, server_model_status::SERVER_MODEL_STATUS_UNLOADED, exit_code);
+            
             // moving the thread to join list to avoid deadlock
             to_join.push_back(std::move(inst.th));
 		} else {
@@ -570,7 +571,7 @@ bool server_models::ensure_model_loaded(const std::string & name) {
         throw std::runtime_error("model name=" + name + " is not found");
     }
     if (meta->status == SERVER_MODEL_STATUS_LOADED) {
-        return false; // already loaded
+        return true; // already loaded
     }
     if (meta->status == SERVER_MODEL_STATUS_UNLOADED) {
         SRV_INF("model name=%s is not loaded, loading...\n", name.c_str());
