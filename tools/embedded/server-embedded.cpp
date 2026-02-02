@@ -509,7 +509,6 @@ void server_models::unload(const std::string & name) {
             if (inst.th.joinable()) {
                 inst.th.join();
             }
-            update_status(name, server_model_status::SERVER_MODEL_STATUS_UNLOADED, exit_code);
             // status change will be handled by the managing thread
         } else {
             SRV_WRN("model instance name=%s is not loaded\n", name.c_str());
