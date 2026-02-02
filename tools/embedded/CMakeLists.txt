@@ -93,6 +93,8 @@ if (BUILD_SHARED_LIBS)
 							CXX_STANDARD 17
 							C_STANDARD 11
 							POSITION_INDEPENDENT_CODE ON)
+	target_compile_definitions(llama-embedded PRIVATE LLAMA_BUILD)
+	target_compile_definitions(llama-embedded PUBLIC  LLAMA_SHARED)
 endif()
 
 install(TARGETS llama-embedded RUNTIME)
@@ -100,5 +102,6 @@ install(TARGETS llama-embedded RUNTIME)
 target_include_directories(llama-embedded PRIVATE ../mtmd)
 target_include_directories(llama-embedded PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(llama-embedded PUBLIC common mtmd uv pthreadpool cpp-httplib concurrentqueue ${CMAKE_THREAD_LIBS_INIT})
+
 
 target_compile_features(llama-embedded PRIVATE cxx_std_17)
