@@ -26,7 +26,7 @@ FetchContent_MakeAvailable(libuv)
 FetchContent_Declare(
   pthreadpool
   GIT_REPOSITORY 		 https://github.com/google/pthreadpool.git
-  GIT_TAG        		 9003ee6c137cea3b94161bd5c614fb43be523ee1
+  GIT_TAG        		 origin/main
   GIT_SHALLOW 			 TRUE
   GIT_SUBMODULES_RECURSE TRUE
   
