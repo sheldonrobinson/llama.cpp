@@ -3342,10 +3342,10 @@ void server_routes::init_routes() {
         if (action == "save") {
             return handle_slots_save(req, id_slot);
         }
-		if (action == "restore") {
+        if (action == "restore") {
             return handle_slots_restore(req, id_slot);
         }
-		if (action == "erase") {
+        if (action == "erase") {
             return handle_slots_erase(req, id_slot);
         }
 		
