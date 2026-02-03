@@ -62,6 +62,23 @@ enum server_model_status {
 	SERVER_MODEL_STATUS_INVALID
 };
 
+typedef enum server_embedded_status : int8_t {
+    // TODO: also add downloading state when the logic is added
+    SERVER_EMBEDDED_STATUS_STARTING,
+    SERVER_EMBEDDED_STATUS_STARTED,
+    SERVER_EMBEDDED_STATUS_BUSY,
+	SERVER_EMBEDDED_STATUS_IDLE,
+	SERVER_EMBEDDED_STATUS_STOPPING,
+	SERVER_EMBEDDED_STATUS_STOPPED,
+	SERVER_EMBEDDED_STATUS_NOT_FOUND
+} server_embedded_status_t;
+
+typedef void (*server_status_callback)(server_embedded_status_t, size_t);
+
+#ifdef __cplusplus
+}
+#endif
+
 static server_model_status server_model_status_from_string(const std::string & status_str) {
     if (status_str == "unloaded") {
         return server_model_status::SERVER_MODEL_STATUS_UNLOADED;
@@ -83,23 +100,6 @@ static std::string server_model_status_to_string(server_model_status status) {
         default:                           return "invalid";
     }
 }
-
-typedef enum server_embedded_status : int8_t {
-    // TODO: also add downloading state when the logic is added
-    SERVER_EMBEDDED_STATUS_STARTING,
-    SERVER_EMBEDDED_STATUS_STARTED,
-    SERVER_EMBEDDED_STATUS_BUSY,
-	SERVER_EMBEDDED_STATUS_IDLE,
-	SERVER_EMBEDDED_STATUS_STOPPING,
-	SERVER_EMBEDDED_STATUS_STOPPED,
-	SERVER_EMBEDDED_STATUS_NOT_FOUND
-} server_embedded_status_t;
-
-typedef void (*server_status_callback)(server_embedded_status_t, size_t);
-
-#ifdef __cplusplus
-}
-#endif
 
 struct server_model_meta {
     common_preset preset;
