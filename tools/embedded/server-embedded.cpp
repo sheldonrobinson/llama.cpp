@@ -994,7 +994,7 @@ static bool should_stop() {
 void server_embedded_submit(std::string& name,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
-                            std::function<bool(std::string)> streaming_response_cb,
+                            std::function<bool(std::string&)> streaming_response_cb,
                             std::function<void(common_chat_msg_with_timings)> response_with_timings_cb) {
     ModelContext                    model_ctx  = g_modelManager.getModelContext(name);
     std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
@@ -1124,116 +1124,47 @@ server_core_proxy::server_core_proxy(const std::string &                        
                                      int32_t                                    timeout_read,
                                      int32_t                                    timeout_write) {
     std::string name = json_value(body, "model", std::string());
-    ModelContext model_ctx = g_modelManager.getModelContext(name);
-    std::shared_ptr<server_context> server_ctx   = model_ctx.server_ctx;
-    // shared between reader and writer threads
-    server_response_reader rd           = server_ctx->get_response_reader();
-    auto meta = server_ctx->get_meta();
-    auto format_chat  = [&meta, &body](){
-            auto &      server_chat_params = meta.chat_params;
-            json        messages           = json_value(body, "messages", json::array());
-            json        tools              = json_value(body, "tools", json());
-            bool        has_tools          = tools.is_array() && !tools.empty();
-            common_chat_tool_choice tool_choice  = common_chat_tool_choice_parse_oaicompat(json_value(body, "tool_choice", std::string("auto")));
-            json        json_schema        = json_value(body, "json_schema", json());
-            std::string grammar            = json_value(body, "grammar", std::string());
-
-            json response_format = json_value(body, "response_format", json());
-            // Handle "response_format" field
-            if (!response_format.empty()) {
-                std::string response_type = json_value(response_format, "type", std::string());
-                if (response_type == "json_object") {
-                    json_schema = json_value(response_format, "schema", json::object());
-                } else if (response_type == "json_schema") {
-                    auto schema_wrapper = json_value(response_format, "json_schema", json::object());
-                    json_schema         = json_value(schema_wrapper, "schema", json::object());
-                } else if (!response_type.empty() && response_type != "text") {
-                    throw std::invalid_argument(
-                        "response_format type must be one of \"text\" or \"json_object\", but got: " + response_type);
-                }
-            }
-
-            std::string reasoning_format = json_value(body, "reasoning_format", std::string("none"));
-            // merge the template args provided from command line with the args provided in the user request
-            auto chat_template_kwargs_object = json_value(body, "chat_template_kwargs", json::object());
-            
-
-            common_chat_templates_inputs inputs;
-            bool use_jinja = has_tools || tool_choice != COMMON_CHAT_TOOL_CHOICE_NONE || server_chat_params.use_jinja;
-            inputs.messages              = common_chat_msgs_parse_oaicompat(messages);
-            inputs.tools                 = common_chat_tools_parse_oaicompat(tools);
-            inputs.tool_choice = has_tools && tool_choice != COMMON_CHAT_TOOL_CHOICE_NONE ? tool_choice :
-                                  has_tools ? COMMON_CHAT_TOOL_CHOICE_AUTO : COMMON_CHAT_TOOL_CHOICE_NONE;
-            inputs.json_schema           = json_schema.is_null() ? "" : json_schema.dump();
-            inputs.grammar               = grammar;
-            inputs.use_jinja             = use_jinja;
-            inputs.parallel_tool_calls   = json_value(body, "parallel_tool_calls", false);
-            inputs.add_generation_prompt = json_value(body, "add_generation_prompt", true);
-            inputs.reasoning_format      = common_reasoning_format_from_name(reasoning_format);
-            for (const auto & item : chat_template_kwargs_object.items()) {
-                inputs.chat_template_kwargs[item.key()] = item.value().dump();
-            }
-            auto enable_thinking_kwarg =
-                json_value(inputs.chat_template_kwargs, "enable_thinking", std::string("false"));
-            if (enable_thinking_kwarg == "true") {
-                inputs.enable_thinking = use_jinja;
-            } else if (enable_thinking_kwarg == "false") {
-                inputs.enable_thinking = false;
-            } else {
-                inputs.enable_thinking = server_chat_params.enable_thinking;
-            }
-            // Apply chat template to the list of messages
-            return common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
-        };
-
-    common_chat_params chat_params = format_chat();
-
-    std::vector<raw_buffer> input_files;
-    {
-        // handle file inputs
-        json files = json_value(body, "files", json::array());
-        if (files.is_array()) {
-            for (const auto & file_entry : files) {
-                std::string filename = json_value(file_entry, "filename", std::string());
-                std::string content  = json_value(file_entry, "content", std::string());
-                if (!filename.empty() && !content.empty()) {
-                    input_files.push_back(std::vector<uint8_t>(content.begin(), content.end()));
-                }
-            }
-        }
+	json messages = json_value(body, "messages", json::array());
+    json tools = json_value(body, "tools", json());
+	
+	auto& messages = common_chat_msgs_parse_oaicompat(messages);
+	auto& tools = common_chat_tools_parse_oaicompat(tools);
+	ModelContext model_ctx = g_modelManager.getModelContext(name);
+	
+	if (model_ctx.state != SERVER_MODEL_STATUS_LOADED) {
+        json err_msg;
+		std::string message("Model ");
+		message.append(name).append("not loaded");
+		err_msg["status"]= -1;
+		err_msg["message"] = message;
+		this->data = err_msg.dump();
+		return;
     }
-    task_params defaults;
-    {
-        defaults.stream            = true;  // make sure we always use streaming mode
-        defaults.timings_per_token = true;  // in order to get timings even when we cancel mid-way
-        // defaults.return_progress = true; // TODO: show progress
-    }
-
-    {
-        // TODO: reduce some copies here in the future
-        server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
-        task.id          = rd.get_new_id();
-        task.index       = 0;
-        task.params      = defaults;            // copy
-        task.cli_prompt  = chat_params.prompt;  // copy
-        task.cli_files   = input_files;         // copy
-
-        // chat template settings
-        task.params.chat_parser_params                  = common_chat_parser_params(chat_params);
-        task.params.chat_parser_params.reasoning_format = common_reasoning_format_from_name(json_value(body, "reasoning_format", std::string("none")));
-        if (!chat_params.parser.empty()) {
-            task.params.chat_parser_params.parser.load(chat_params.parser);
-        }
-
-        rd.post_task({ std::move(task) });
-    }
-
-    if (model_ctx.state != SERVER_MODEL_STATUS_LOADED) {
-        thread = std::thread([&server_ctx]() {
-            server_ctx->start_loop(); }
-        );
-    }
-
-    server_core_context* core_ctx = g_servers[name];
-    std::shared_ptr<MemoryDuplexStream>  conn = core_ctx->srv->create_connection();
+	
+	server_core_context* core_ctx = g_servers[name];
+    std::shared_ptr<MemoryDuplexStream> conn = core_ctx->srv->create_connection();
+	
+	// wire up the receive end of the pipe
+    this->next = [&conn](std::string & out) -> bool {
+        return conn-recv_from_server(out); // false if EOF or pipe broken
+    };
+	
+	auto streaming_response_cb = [conn, should_stop](std::string & out) -> bool {
+		int err = conn->write(out.c_str(), strlen(out.c_str()));
+		return should_stop() || err < 0;
+	}
+	
+	auto response_with_timings_cb = [&](common_chat_msg_with_timings& out) {
+		std::vector<common_chat_msg> msgs;
+		msgs.push_back(out.message);
+		auto resp = nlohmann::ordered_json common_chat_msgs_to_json_oaicompat(msgs, false);
+		this->data = resp.dump();
+	}
+	
+	this->thread = std::thread([&]() {
+            server_embedded_submit(name, messages, tools, streaming_response_cb, response_with_timings_cb);
+		});
+	this->thread.detach();
+	
+	
 }
