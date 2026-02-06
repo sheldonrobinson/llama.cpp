@@ -773,12 +773,15 @@ static server_core_context::handler_t ex_wrapper(server_core_context::handler_t 
 
 static std::unordered_map<std::string, server_core_context*> g_servers;
 
-void server_embedded_model_list(char* models) {
-	auto list_of_models = g_modelManager.listModelsJson().dump().c_str();
-	int len = strlen(list_of_models);
-	models = (char*) calloc(len+1, sizeof(char));
-	std::memcpy(models, list_of_models, sizeof(char)*len);
-	models[len] = '\0';
+std::string server_embedded_model_list() {
+	return g_modelManager.listModelsJson().dump();
+	// if(models){
+		// auto list_of_models = g_modelManager.listModelsJson().dump().c_str();
+		// int len = strlen(list_of_models);
+		// models = (char*) calloc(len+1, sizeof(char));
+		// std::memcpy(models, list_of_models, sizeof(char)*len);
+		// models[len] = '\0';
+	// }
 }
 
 void server_embedded_inference_svc(const common_params & args) {
