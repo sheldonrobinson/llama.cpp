@@ -991,10 +991,10 @@ static bool should_stop() {
     return g_is_interrupted.load();
 }
 
-void server_embedded_submit(std::string& name,
+void server_embedded_submit(std::string name,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
-                            std::function<bool(std::string&)> streaming_response_cb,
+                            std::function<bool(std::string)> streaming_response_cb,
                             std::function<void(common_chat_msg_with_timings)> response_with_timings_cb) {
     ModelContext                    model_ctx  = g_modelManager.getModelContext(name);
     std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
@@ -1124,11 +1124,11 @@ server_core_proxy::server_core_proxy(const std::string &                        
                                      int32_t                                    timeout_read,
                                      int32_t                                    timeout_write) {
     std::string name = json_value(body, "model", std::string());
-	json messages = json_value(body, "messages", json::array());
-    json tools = json_value(body, "tools", json());
+	json jmessages = json_value(body, "messages", json::array());
+    json jtools = json_value(body, "tools", json());
 	
-	auto& messages = common_chat_msgs_parse_oaicompat(messages);
-	auto& tools = common_chat_tools_parse_oaicompat(tools);
+	auto& messages = common_chat_msgs_parse_oaicompat(jmessages);
+	auto& tools = common_chat_tools_parse_oaicompat(jtools);
 	ModelContext model_ctx = g_modelManager.getModelContext(name);
 	
 	if (model_ctx.state != SERVER_MODEL_STATUS_LOADED) {
@@ -1146,20 +1146,24 @@ server_core_proxy::server_core_proxy(const std::string &                        
 	
 	// wire up the receive end of the pipe
     this->next = [&conn](std::string & out) -> bool {
-        return conn-recv_from_server(out); // false if EOF or pipe broken
+        return conn->recv_from_server(out); // false if EOF or pipe broken
+    };
+
+    auto check = [&]() -> bool {
+        return should_stop();
     };
 	
-	auto streaming_response_cb = [conn, should_stop](std::string & out) -> bool {
-		int err = conn->write(out.c_str(), strlen(out.c_str()));
-		return should_stop() || err < 0;
-	}
-	
-	auto response_with_timings_cb = [&](common_chat_msg_with_timings& out) {
-		std::vector<common_chat_msg> msgs;
-		msgs.push_back(out.message);
-		auto resp = nlohmann::ordered_json common_chat_msgs_to_json_oaicompat(msgs, false);
-		this->data = resp.dump();
-	}
+	auto streaming_response_cb = [&](std::string out) -> bool {
+        int err = conn->write(out.c_str(), strlen(out.c_str()));
+        return check() || err < 0;
+    };
+
+    auto response_with_timings_cb = [&](common_chat_msg_with_timings out) {
+        std::vector<common_chat_msg> msgs;
+        msgs.push_back(out.message);
+        auto resp  = common_chat_msgs_to_json_oaicompat(msgs, false);
+        this->data = resp.dump();
+    };
 	
 	this->thread = std::thread([&]() {
             server_embedded_submit(name, messages, tools, streaming_response_cb, response_with_timings_cb);
