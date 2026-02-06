@@ -899,7 +899,7 @@ void server_embedded_inference_svc(const common_params & args) {
     (*model_ctx.server_ctx).start_loop();
 }
 
-void server_embedded_start(ggml_numa_strategy numa, server_status_callback callback) {
+void server_embedded_start(ggml_numa_strategy numa, server_status_callback& callback) {
 	if(callback){
 		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STARTING);
 	}
@@ -946,7 +946,7 @@ void server_embedded_start(ggml_numa_strategy numa, server_status_callback callb
 	}
 }
 
-void server_embedded_stop(server_status_callback callback){
+void server_embedded_stop(server_status_callback& callback){
 	if (g_is_terminating.test_and_set()) {
 		if(callback){
 			callback(server_embedded_status::SERVER_EMBEDDED_STATUS_INVALID);
