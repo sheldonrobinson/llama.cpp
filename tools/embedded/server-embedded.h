@@ -5,7 +5,6 @@
 #include "server-common.h"
 #include "server-core.h"
 #include "server-task.h"
-#include "llama.h"
 
 #include <mutex>
 #include <condition_variable>
