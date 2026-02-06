@@ -730,6 +730,8 @@ void server_models_routes::init_routes() {
     };
 }
 
+
+
 static std::function<void(int)> shutdown_handler;
 static std::atomic_flag g_is_terminating = ATOMIC_FLAG_INIT;
 static std::atomic<bool> g_is_interrupted = false;
@@ -770,6 +772,10 @@ static server_core_context::handler_t ex_wrapper(server_core_context::handler_t 
 }
 
 static std::unordered_map<std::string, server_core_context*> g_servers;
+
+std::string server_embedded_model_list() const {
+	return g_modelManager.listModelsJson().dump();
+}
 
 void server_embedded_inference_svc(const common_params & args) {
     common_params params = args;
