@@ -773,8 +773,8 @@ static server_core_context::handler_t ex_wrapper(server_core_context::handler_t 
 
 static std::unordered_map<std::string, server_core_context*> g_servers;
 
-std::string server_embedded_model_list() {
-	return g_modelManager.listModelsJson().dump();
+char* server_embedded_model_list() {
+	return g_modelManager.listModelsJson().dump().c_str();
 }
 
 void server_embedded_inference_svc(const common_params & args) {
