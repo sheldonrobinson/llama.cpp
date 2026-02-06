@@ -73,7 +73,7 @@ typedef enum server_embedded_status : int8_t {
 	SERVER_EMBEDDED_STATUS_NOT_FOUND
 } server_embedded_status_t;
 
-typedef void (*server_status_callback)(server_embedded_status_t, size_t);
+typedef void (*server_status_callback)(server_embedded_status, size_t);
 
 #ifdef __cplusplus
 }
