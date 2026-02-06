@@ -962,10 +962,6 @@ static bool should_strip_proxy_header(const std::string & header_name) {
     return false;
 }
 
-void server_embedded_submit(std::vector<common_chat_msg>         messages,
-                            std::function<void(std::string)>     streaming_response_cb,
-                            std::function<void(common_chat_msg)> response_cb);
-
 static bool should_stop() {
     return g_is_interrupted.load();
 }
@@ -973,7 +969,7 @@ static bool should_stop() {
 void server_embedded_submit(std::string& name,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
-                            std::function<void(std::string)> streaming_response_cb,
+                            std::function<bool(std::string)> streaming_response_cb,
                             std::function<void(common_chat_msg_with_timings)> response_with_timings_cb) {
     ModelContext                    model_ctx  = g_modelManager.getModelContext(name);
     std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
@@ -1058,14 +1054,18 @@ void server_embedded_submit(std::string& name,
                             is_thinking = false;
                         }
                         if (streaming_response_cb) {
-                            streaming_response_cb(diff.content_delta);
+                            if(streaming_response_cb(diff.content_delta)){
+								break;
+							}
                         }
                         curr_content += diff.content_delta;
                     }
                     if (!diff.reasoning_content_delta.empty()) {
                         is_thinking = true;
                         if (streaming_response_cb) {
-                            streaming_response_cb(diff.reasoning_content_delta);
+                            if(streaming_response_cb(diff.reasoning_content_delta)){
+								break;
+							}
                         }
                         reasoning_content += diff.reasoning_content_delta;
                     }

@@ -251,12 +251,12 @@ struct common_chat_msg_with_timings {
 
 LLAMA_EMBEDDED_API void server_embedded_inference_svc(const common_params & args);
 
-LLAMA_EMBEDDED_API void server_embedded_start(const common_params& params, server_status_callback* callback);
+LLAMA_EMBEDDED_API void server_embedded_start(ggml_numa_strategy numa, server_status_callback * callback);
 
 LLAMA_EMBEDDED_API void server_embedded_stop();
 
 LLAMA_EMBEDDED_API void server_embedded_submit(std::string model,
                             std::vector<common_chat_msg>     messages,
                             std::vector<common_chat_tool>        tools,
-                            std::function<void(std::string)> streaming_response_cb,
+                            std::function<bool(std::string)> streaming_response_cb,
                             std::function<void(common_chat_msg_with_timings)> response_with_timings_cb);
