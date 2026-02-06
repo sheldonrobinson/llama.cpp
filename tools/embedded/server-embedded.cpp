@@ -889,7 +889,10 @@ void server_embedded_inference_svc(const common_params & args) {
     (*model_ctx.server_ctx).start_loop();
 }
 
-void server_embedded_start(ggml_numa_strategy numa, server_status_callback * callback) {
+void server_embedded_start(ggml_numa_strategy numa, server_status_callback callback) {
+	if(callback){
+		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STARTING);
+	}
     try {
        auto& mem_info = get_memory_info();
         size_t total_mem = mem_info.total_physical/(1024*1024);
@@ -928,15 +931,27 @@ void server_embedded_start(ggml_numa_strategy numa, server_status_callback * cal
 	
 	// starting
 	g_is_terminating.clear();
+	if(callback){
+		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STARTED);
+	}
 }
 
-void server_embedded_stop(){
+void server_embedded_stop(server_status_callback callback){
 	if (g_is_terminating.test_and_set()) {
+		if(callback){
+			callback(server_embedded_status::SERVER_EMBEDDED_STATUS_INVALID);
+		}
         return;
     }
+	if(callback){
+		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STOPPING);
+	}
     g_is_interrupted.store(true);
 	if(shutdown_handler != nullptr){
 		shutdown_handler(0);
+	}
+	if(callback){
+		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STOPPED);
 	}
 }
 
