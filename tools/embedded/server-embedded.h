@@ -55,14 +55,14 @@ extern "C"
  *  └────────unloaded─────────┘
  */
 
-enum server_model_status : int8_t {
+enum server_model_status {
     SERVER_MODEL_STATUS_UNLOADED,
     SERVER_MODEL_STATUS_LOADING,
     SERVER_MODEL_STATUS_LOADED,
 	SERVER_MODEL_STATUS_INVALID
 };
 
-typedef enum server_embedded_status : int8_t {
+typedef enum server_embedded_status {
     // TODO: also add downloading state when the logic is added
     SERVER_EMBEDDED_STATUS_STARTING,
     SERVER_EMBEDDED_STATUS_STARTED,
