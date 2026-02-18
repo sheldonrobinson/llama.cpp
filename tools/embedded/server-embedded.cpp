@@ -994,8 +994,8 @@ static bool should_stop() {
     return g_is_interrupted.load();
 }
 
-void server_embedded_submit(std::string name,
-							common_params_sampling sampling_params,
+void server_embedded_submit(common_params_sampling sampling_params,
+							std::string name,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
                             std::function<bool(std::string)> streaming_response_cb,
@@ -1169,8 +1169,9 @@ server_core_proxy::server_core_proxy(const std::string &                        
         this->data = resp.dump();
     };
 	
+	common_params_sampling sampling;
 	this->thread = std::thread([&]() {
-            server_embedded_submit(name, messages, tools, streaming_response_cb, response_with_timings_cb);
+            server_embedded_submit(sampling, name, messages, tools, streaming_response_cb, response_with_timings_cb);
 		});
 	this->thread.detach();
 	
