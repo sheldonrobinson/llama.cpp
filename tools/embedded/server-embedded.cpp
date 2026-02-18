@@ -995,6 +995,7 @@ static bool should_stop() {
 }
 
 void server_embedded_submit(std::string name,
+							common_params_sampling sampling_params,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
                             std::function<bool(std::string)> streaming_response_cb,

@@ -43,21 +43,6 @@ set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "Build pthreadpool micro-benchma
 FetchContent_MakeAvailable(pthreadpool)
 
 
-######################## concurrentqueue
-FetchContent_Declare(
-  concurrentqueue
-  GIT_REPOSITORY 		 https://github.com/cameron314/concurrentqueue.git
-  GIT_TAG        		 c68072129c8a5b4025122ca5a0c82ab14b30cb03
-  GIT_SHALLOW 			 TRUE
-  GIT_SUBMODULES_RECURSE TRUE
-  
-  EXCLUDE_FROM_ALL
-			 
-  OVERRIDE_FIND_PACKAGE
-)
-
-FetchContent_MakeAvailable(concurrentqueue)
-
 
 if (NOT LLAMA_HTTPLIB)
     message(FATAL_ERROR "LLAMA_HTTPLIB is OFF, cannot build llama-embedded. Hint: to skip building server, set -DLLAMA_BUILD_SERVER=OFF")
@@ -101,7 +86,7 @@ install(TARGETS llama-embedded RUNTIME)
 
 target_include_directories(llama-embedded PRIVATE ../mtmd)
 target_include_directories(llama-embedded PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(llama-embedded PUBLIC common mtmd uv pthreadpool cpp-httplib concurrentqueue ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(llama-embedded PUBLIC common mtmd uv pthreadpool cpp-httplib ${CMAKE_THREAD_LIBS_INIT})
 
 
 target_compile_features(llama-embedded PRIVATE cxx_std_17)
