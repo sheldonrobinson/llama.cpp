@@ -902,7 +902,7 @@ void server_embedded_inference_svc(const common_params & args) {
     (*model_ctx.server_ctx).start_loop();
 }
 
-void server_embedded_start(ggml_numa_strategy numa, server_status_callback& callback) {
+void server_embedded_start(uint8_t numa_strategy, server_status_callback& callback) {
 	if(callback){
 		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STARTING);
 	}
@@ -919,6 +919,16 @@ void server_embedded_start(ggml_numa_strategy numa, server_status_callback& call
     common_init();
 
     llama_backend_init();
+	ggml_numa_strategy numa = ggml_numa_strategy::GGML_NUMA_STRATEGY_DISABLED;
+	switch(numa_strategy)
+	{ 
+		case 0: numa = ggml_numa_strategy::GGML_NUMA_STRATEGY_DISABLED; break;
+		case 1: numa = ggml_numa_strategy::GGML_NUMA_STRATEGY_DISTRIBUTE; break;
+		case 2: numa = ggml_numa_strategy::GGML_NUMA_STRATEGY_ISOLATE; break;
+		case 3: numa = ggml_numa_strategy::GGML_NUMA_STRATEGY_NUMACTL; break;
+		case 4: numa = ggml_numa_strategy::GGML_NUMA_STRATEGY_MIRROR; break;
+		default: numa = ggml_numa_strategy::GGML_NUMA_STRATEGY_DISABLED; break;
+	}
     llama_numa_init(numa);
 
     shutdown_handler = [](int) {
