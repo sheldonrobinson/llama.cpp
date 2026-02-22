@@ -1004,6 +1004,16 @@ static bool should_stop() {
     return g_is_interrupted.load();
 }
 
+llama_tokens server_embedded_tokenize_svc(std::string model, std::string text)
+{
+    ModelContext                    model_ctx  = g_modelManager.getModelContext(model);
+    std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
+    server_context_meta &           meta               = server_ctx->get_meta();
+    server_chat_params &            server_chat_params = meta.chat_params;
+    llama_context* ctx = server_ctx->get_llama_context();
+    return common_tokenize(ctx, text, false, false);
+}
+
 void server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
                             std::vector<common_chat_msg>  messages,
@@ -1041,6 +1051,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
     }
     common_chat_params chat_params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
     task_params        defaults;
+	defaults.sampling          = sampling_params;
     defaults.stream            = true;  // make sure we always use streaming mode
     defaults.timings_per_token = true;  // in order to get timings even when we cancel mid-way
     auto & generate_completion = [&]() {

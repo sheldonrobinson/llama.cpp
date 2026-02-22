@@ -249,6 +249,8 @@ struct common_chat_msg_with_timings {
 
 LLAMA_EMBEDDED_API void server_embedded_inference_svc(const common_params& args);
 
+LLAMA_EMBEDDED_API llama_tokens server_embedded_tokenize_svc(std::string model, std::string text);
+
 LLAMA_EMBEDDED_API void server_embedded_start(uint8_t numa_strategy, server_status_callback& callback);
 
 LLAMA_EMBEDDED_API void server_embedded_stop(server_status_callback& callback);
