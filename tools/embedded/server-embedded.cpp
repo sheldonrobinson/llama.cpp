@@ -785,6 +785,7 @@ std::string server_embedded_model_list() {
 }
 
 void server_embedded_inference_svc(const common_params & args) {
+	common_params defaults;
     common_params params = args;
     // validate batch size for embeddings
     // embeddings require all tokens to be processed in a single ubatch
@@ -801,27 +802,34 @@ void server_embedded_inference_svc(const common_params & args) {
         params.n_parallel = 4;
         params.kv_unified = true;
     }
-
+	std::filesystem::path modelPath(params.model.path);
+	stdd::string modelfilename = modelPath.filename().stem().generic_string();
     // for consistency between server router mode and single-model mode, we set the same model name as alias
-    if (params.model_alias.empty() && !params.model.name.empty()) {
-        params.model_alias = params.model.name;
-    }
+    // if (params.model_alias.empty() && !params.model.name.empty()) {
+        // params.model_alias = params.model.name;
+    // }
+	params.model.name = modelfilename;
+	params.model_alias = modelfilename;
+	
 
-    g_modelManager.loadModel(params.model.name, params);
+    if (g_modelManager.getModelState(modelfilename) == server_model_status::SERVER_MODEL_STATUS_UNLOADED)
+	{
+		g_modelManager.loadModel(modelfilename, params);
+	}
 
     // struct that contains llama context and inference
-    ModelContext model_ctx = g_modelManager.getModelContext(params.model.name);
+    ModelContext model_ctx = g_modelManager.getModelContext(modelfilename);
 
     server_core_context ctx_http; 
 
-    auto & result = g_servers.emplace(std::make_pair(params.model.name, &ctx_http));
+    auto & result = g_servers.emplace(std::make_pair(modelfilename, &ctx_http));
 
     if (!result.second) {
         return;
     }
     
     if (!ctx_http.init(params)) {
-        g_servers.erase(params.model.name);
+        g_servers.erase(modelfilename);
         return;
     }
 
@@ -872,7 +880,7 @@ void server_embedded_inference_svc(const common_params & args) {
         } catch (...) {
             SRV_ERR("%s: failed to stop HTTP server after start failure\n", __func__);
         }
-        g_servers.erase(params.model.name);
+        g_servers.erase(modelfilename);
         LOG_ERR("%s: exiting due to HTTP server error\n", __func__);
         return;
     }
@@ -888,7 +896,7 @@ void server_embedded_inference_svc(const common_params & args) {
         if (ctx_http.thread.joinable()) {
             ctx_http.thread.join();
         }
-        g_servers.erase(params.model.name);
+        g_servers.erase(modelfilename);
         LOG_ERR("%s: exiting due to model loading error\n", __func__);
         return;
     }
