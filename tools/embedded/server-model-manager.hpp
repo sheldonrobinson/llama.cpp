@@ -102,9 +102,9 @@ public:
 			int count                = sizeof(mparams.tensor_split) / sizeof(mparams.tensor_split[0]);
 			int N = count < nd ? count : nd;
             for (int i = 0; i < N && i < nd; i++) {
-				float val = *(mparams.tensor_split + i);
-				args.tensor_split[i] = fabs(val);
-				allocatedSum += fabs(val);
+				float val = fabs(*(mparams.tensor_split + i));
+				args.tensor_split[i] = val;
+				allocatedSum += val;
 				lp2normSum += (val * val);
             }
             // rescale
