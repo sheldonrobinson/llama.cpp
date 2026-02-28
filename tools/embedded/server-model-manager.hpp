@@ -133,8 +133,10 @@ public:
         auto & result = models.emplace(std::make_pair(tenantModelName, ModelContext()));
 
         changeState(tenantModelName, result.first->second, server_model_status::SERVER_MODEL_STATUS_LOADING);
-
-        if (!(models[tenantModelName].server_ctx->load_model(args))) {
+		
+		ModelContext ctx = models[tenantModelName];
+		bool is_model_loaded = ctx.server_ctx->load_model(args);
+        if (!is_model_loaded) {
             throw std::runtime_error("Failed to load model: " + params.model.path);
         }
 
