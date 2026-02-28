@@ -93,26 +93,24 @@ public:
             }
         }
  
-
-        if (mparams.tensor_split) {
+		
+        if (mparams.split_mode != llama_split_mode::LLAMA_SPLIT_MODE_NONE) {
             size_t          nd           = llama_max_devices();
-            int             count            = 0;
-            float           portionSum   = 0.0f;
-            float           allocatedSum = 0.0f;
+            float          allocatedSum = 0.0f;
+			float		   lp2normSum = 0.0f;
             constexpr float LAST_EPSILON = 1.0f - FLT_EPSILON;
-            for (int i = 0; *(mparams.tensor_split + i) > 0.0f && portionSum < LAST_EPSILON; i++) {
-                if (i < nd) {
-                    args.tensor_split[i] = *(mparams.tensor_split + i);
-                    allocatedSum += *(mparams.tensor_split + i);
-                }
-                count++;
-                portionSum += *(mparams.tensor_split + i);
+			int count                = sizeof(mparams.tensor_split) / sizeof(mparams.tensor_split[0]);
+			int N = count < nd ? count : nd;
+            for (int i = 0; i < N && i < nd; i++) {
+				float val = *(mparams.tensor_split + i);
+				args.tensor_split[i] = fabs(val);
+				allocatedSum += fabs(val);
+				lp2normSum += (val * val);
             }
             // rescale
-            if (count > nd || fabs(1.0f - allocatedSum) > FLT_EPSILON) {
-                float factor = 1.0f / allocatedSum;
-                for (size_t j = 0; j < nd; j++) {
-                    args.tensor_split[j] = args.tensor_split[j] * factor;
+            if (lp2normSum > 0.0f && fabs(1.0f - allocatedSum) > FLT_EPSILON) {
+                for (size_t j = 0; j < N; j++) {
+                    args.tensor_split[j] = (args.tensor_split[j] * args.tensor_split[j])/lp2normSum;
                 }
             }
         }
