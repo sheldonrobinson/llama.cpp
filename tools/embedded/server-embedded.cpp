@@ -803,7 +803,7 @@ void server_embedded_inference_svc(const common_params & args) {
         params.kv_unified = true;
     }
 	std::filesystem::path modelPath(params.model.path);
-	stdd::string modelfilename = modelPath.filename().stem().generic_string();
+	std::string modelfilename = modelPath.filename().stem().generic_string();
     // for consistency between server router mode and single-model mode, we set the same model name as alias
     // if (params.model_alias.empty() && !params.model.name.empty()) {
         // params.model_alias = params.model.name;

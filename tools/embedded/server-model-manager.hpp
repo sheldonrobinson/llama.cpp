@@ -153,7 +153,7 @@ public:
     void unloadModel(const std::string &tenantModelName) {
         std::unique_lock<std::shared_mutex> lock(globalMutex);
         auto it = models.find(tenantModelName);
-        if (it == models.end()) return server_model_status::SERVER_MODEL_STATUS_UNLOADED;
+        if (it == models.end()) return;
         ModelContext& model_ctx_ref = it->second;
         auto server_ctx = model_ctx_ref.server_ctx;
         server_ctx->terminate();
