@@ -211,6 +211,7 @@ struct server_core_proxy : server_core_res {
   public:
     server_core_proxy(const std::string &                        method,
                       const std::string &                        path,
+					  const std::string &						query_string,
                       const std::map<std::string, std::string> & headers,
                       const std::string &                        body,
                       const std::function<bool()>                should_stop,
