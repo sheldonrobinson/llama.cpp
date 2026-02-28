@@ -785,7 +785,6 @@ std::string server_embedded_model_list() {
 }
 
 void server_embedded_inference_svc(const common_params & args) {
-	common_params defaults;
     common_params params = args;
     // validate batch size for embeddings
     // embeddings require all tokens to be processed in a single ubatch
@@ -819,6 +818,9 @@ void server_embedded_inference_svc(const common_params & args) {
 
     // struct that contains llama context and inference
     ModelContext model_ctx = g_modelManager.getModelContext(modelfilename);
+	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_UNLOADED) {
+		return;
+	}
 
     server_core_context ctx_http; 
 
