@@ -902,6 +902,12 @@ void server_embedded_inference_svc(const common_params & args) {
     (*model_ctx.server_ctx).start_loop();
 }
 
+void server_embedded_ggml_abort_callback_t(const char* error_message) {
+#if defined(_DEBUG) || defined(DEBUG)
+	fprintf(stderr, "%s", error_message);
+#endif
+}
+
 void server_embedded_start(uint8_t numa_strategy, server_status_callback& callback) {
 	if(callback){
 		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STARTING);
@@ -915,8 +921,21 @@ void server_embedded_start(uint8_t numa_strategy, server_status_callback& callba
     } catch (const std::exception & e) {
         LOG_WRN("%s: failed to get system memory info: %s\n", __func__, e.what());
     }
+	
+	ggml_set_abort_callback(server_embedded_ggml_abort_callback_t);
 
     common_init();
+	
+	// only print errors
+	llama_log_set([](enum ggml_log_level level, const char* text, void* /* user_data */) {
+		if (level >= GGML_LOG_LEVEL_ERROR) {
+			fprintf(stderr, "%s", text);
+		}
+		}, nullptr);
+
+	// Based on tools/llama-bench/llama-bench.cpp
+	// load dynamic backends
+	ggml_backend_load_all();
 
     llama_backend_init();
 	ggml_numa_strategy numa = ggml_numa_strategy::GGML_NUMA_STRATEGY_DISABLED;
