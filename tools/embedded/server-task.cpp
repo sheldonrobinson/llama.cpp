@@ -81,7 +81,6 @@ json task_params::to_json(bool only_metrics) const {
             {"speculative.type",          common_speculative_type_to_str(speculative.type)},
             {"speculative.ngram_size_n",  speculative.ngram_size_n},
             {"speculative.ngram_size_m",  speculative.ngram_size_m},
-            {"speculative.ngram_c_rate",  speculative.ngram_check_rate},
             {"speculative.ngram_m_hits",  speculative.ngram_min_hits},
             {"timings_per_token",         timings_per_token},
             {"post_sampling_probs",       post_sampling_probs},
@@ -145,7 +144,6 @@ json task_params::to_json(bool only_metrics) const {
         {"speculative.type",          common_speculative_type_to_str(speculative.type)},
         {"speculative.ngram_size_n",  speculative.ngram_size_n},
         {"speculative.ngram_size_m",  speculative.ngram_size_m},
-        {"speculative.ngram_c_rate",  speculative.ngram_check_rate},
         {"speculative.ngram_m_hits",  speculative.ngram_min_hits},
         {"timings_per_token",         timings_per_token},
         {"post_sampling_probs",       post_sampling_probs},
@@ -207,7 +205,8 @@ task_params server_task::params_from_json_cmpl(
     params.cache_prompt     = json_value(data,       "cache_prompt",       defaults.cache_prompt);
     params.return_tokens    = json_value(data,       "return_tokens",      false);
     params.return_progress  = json_value(data,       "return_progress",    false);
-    params.n_predict        = json_value(data,       "n_predict",          json_value(data, "max_tokens", defaults.n_predict));
+    auto max_tokens         = json_value(data,       "max_tokens",         defaults.n_predict);
+    params.n_predict        = json_value(data,       "n_predict",          json_value(data, "max_completion_tokens", max_tokens));
     params.n_indent         = json_value(data,       "n_indent",           defaults.n_indent);
     params.n_keep           = json_value(data,       "n_keep",             defaults.n_keep);
     params.n_discard        = json_value(data,       "n_discard",          defaults.n_discard);
@@ -258,12 +257,10 @@ task_params server_task::params_from_json_cmpl(
 
     params.speculative.ngram_size_n     = json_value(data, "speculative.ngram_size_n", defaults.speculative.ngram_size_n);
     params.speculative.ngram_size_m     = json_value(data, "speculative.ngram_size_m", defaults.speculative.ngram_size_m);
-    params.speculative.ngram_check_rate = json_value(data, "speculative.ngram_c_rate", defaults.speculative.ngram_check_rate);
     params.speculative.ngram_min_hits   = json_value(data, "speculative.ngram_m_hits", defaults.speculative.ngram_min_hits);
 
     params.speculative.ngram_size_n     = std::max(std::min(1, (int) params.speculative.ngram_size_n),     1024);
     params.speculative.ngram_size_m     = std::max(std::min(1, (int) params.speculative.ngram_size_m),     1024);
-    params.speculative.ngram_check_rate = std::max(std::min(1, (int) params.speculative.ngram_check_rate), 1024);
     params.speculative.ngram_min_hits   = std::max(std::min(1, (int) params.speculative.ngram_min_hits),   1024);
 
     // Use OpenAI API logprobs only if n_probs wasn't provided
@@ -1904,10 +1901,9 @@ server_prompt * server_prompt_cache::alloc(const server_prompt & prompt, size_t 
         return nullptr;
     }
 
-    // TODO: for some reason we can't copy server_tokens, so we have to do this workaround
     auto & cur = states.emplace_back();
     cur = {
-        /*.tokens      =*/ server_tokens(prompt.tokens.get_text_tokens(), false),
+        /*.tokens      =*/ prompt.tokens.clone(),
         /*.data        =*/ std::move(state_data),
         /*.checkpoints =*/ prompt.checkpoints,
     };

@@ -230,6 +230,17 @@ static std::map<std::string, std::string> get_headers(const httplib::Request & r
     return headers;
 }
 
+static std::string build_query_string(const httplib::Request & req) {
+    std::string qs;
+    for (const auto & [key, value] : req.params) {
+        if (!qs.empty()) {
+            qs += '&';
+        }
+        qs += httplib::encode_query_component(key) + "=" + httplib::encode_query_component(value);
+    }
+    return qs;
+}
+
 // using unique_ptr for request to allow safe capturing in lambdas
 using server_core_req_ptr = std::unique_ptr<server_core_req>;
 
@@ -273,6 +284,7 @@ void server_core_context::get(const std::string & path, const server_core_contex
             get_params(req),
             get_headers(req),
             req.path,
+			build_query_string(req),
             req.body,
             req.is_connection_closed
         });
@@ -287,6 +299,7 @@ void server_core_context::post(const std::string & path, const server_core_conte
             get_params(req),
             get_headers(req),
             req.path,
+			build_query_string(req),
             req.body,
             req.is_connection_closed
         });

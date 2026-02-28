@@ -42,12 +42,6 @@ set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "Build pthreadpool micro-benchma
 
 FetchContent_MakeAvailable(pthreadpool)
 
-
-
-if (NOT LLAMA_HTTPLIB)
-    message(FATAL_ERROR "LLAMA_HTTPLIB is OFF, cannot build llama-embedded. Hint: to skip building server, set -DLLAMA_BUILD_SERVER=OFF")
-endif()
-
 set(TARGET_SRCS
 	server-task.cpp
     server-task.h
