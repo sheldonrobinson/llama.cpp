@@ -852,18 +852,6 @@ private:
 
         metrics.init();
 
-        // populate webui settings
-        {
-            if (!params_base.webui_config_json.empty()) {
-                try {
-                    json_webui_settings = json::parse(params_base.webui_config_json);
-                } catch (const std::exception & e) {
-                    SRV_ERR("%s: failed to parse webui config: %s\n", __func__, e.what());
-                    return false;
-                }
-            }
-        }
-
         // populate chat template params
         {
             common_chat_templates_ptr chat_templates;
