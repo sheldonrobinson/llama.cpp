@@ -78,7 +78,7 @@ public:
 			args.model.path.c_str(), &mparams, &cparams, args.tensor_split, args.tensor_buft_overrides.data(), args.fit_params_target.data(), args.fit_params_min_ctx,
 							 args.verbosity >= 4 ? GGML_LOG_LEVEL_DEBUG : GGML_LOG_LEVEL_ERROR);
 		if (status != LLAMA_PARAMS_FIT_STATUS_SUCCESS) {
-			throw std::runtime_error("Failed to fit in free memory, model: " + params.model.path);
+			SRV_WRN("Failed to determine llama_params_fit, using defaults for model %s", params.model.path.c_str());
 		}
 
         args.n_ctx = cparams.n_ctx;
