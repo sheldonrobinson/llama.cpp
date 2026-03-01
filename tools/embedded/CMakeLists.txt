@@ -43,14 +43,14 @@ set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "Build pthreadpool micro-benchma
 FetchContent_MakeAvailable(pthreadpool)
 
 set(TARGET_SRCS
-	server-task.cpp
-    server-task.h
-    server-queue.cpp
-    server-queue.h
-    server-common.cpp
-    server-common.h
-    server-context.cpp
-    server-context.h
+	# server-task.cpp
+    # server-task.h
+    # server-queue.cpp
+    # server-queue.h
+    # server-common.cpp
+    # server-common.h
+    # server-context.cpp
+    # server-context.h
     server-core.cpp
     server-core.h
     server-embedded.cpp
@@ -80,7 +80,7 @@ install(TARGETS llama-embedded RUNTIME)
 
 target_include_directories(llama-embedded PRIVATE ../mtmd)
 target_include_directories(llama-embedded PRIVATE ${CMAKE_SOURCE_DIR})
-target_link_libraries(llama-embedded PUBLIC common mtmd uv pthreadpool cpp-httplib ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(llama-embedded PRIVATE server-context PUBLIC common mtmd uv pthreadpool cpp-httplib ${CMAKE_THREAD_LIBS_INIT})
 
 
 target_compile_features(llama-embedded PRIVATE cxx_std_17)
