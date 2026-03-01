@@ -1196,8 +1196,8 @@ void server_embedded_submit(common_params_sampling sampling_params,
     }
     common_chat_params chat_params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
     
-    auto & generate_completion = [&server_ctx, &streaming_response_cb , &response_with_timings_cb,
-									sampling_params, inputs, chat_params]() {
+    auto & generate_completion = [&server_ctx, &streaming_response_cb, &response_with_timings_cb,
+									sampling_params, inputs, chat_params]()->std::string {
         result_timings out_timings;
         server_response_reader rd = server_ctx->get_response_reader();
         server_task            task = server_task(SERVER_TASK_TYPE_COMPLETION);
@@ -1293,7 +1293,8 @@ void server_embedded_submit(common_params_sampling sampling_params,
             response_with_timings_cb(msg_with_timings);
         }
     };
-    generate_completion();
+    std::string resp = generate_completion();
+	return;
 }
 
 server_core_proxy::server_core_proxy(const std::string &                        method,
