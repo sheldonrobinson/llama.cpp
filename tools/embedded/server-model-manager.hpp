@@ -58,6 +58,11 @@ public:
         std::lock_guard<std::mutex> lock(listenerMutex);
         listeners.push_back(std::move(listener));
     }
+	
+	void clearAllStateChangeListeners() {
+        std::lock_guard<std::mutex> lock(listenerMutex);
+        listeners.clear();
+    }
 
     void loadModel(const std::string &tenantModelName, const common_params &params) {
         std::unique_lock<std::shared_mutex> lock(globalMutex);
