@@ -78,8 +78,7 @@ endif()
 
 install(TARGETS llama-embedded RUNTIME)
 include_directories(../server)
-target_include_directories(llama-embedded PRIVATE ../mtmd)
-target_include_directories(llama-embedded PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(llama-embedded PRIVATE ${CMAKE_SOURCE_DIR} "../mtmd" "${CMAKE_SOURCE_DIR}/../server")
 target_link_libraries(llama-embedded PRIVATE server-context PUBLIC common mtmd uv pthreadpool cpp-httplib ${CMAKE_THREAD_LIBS_INIT})
 
 
