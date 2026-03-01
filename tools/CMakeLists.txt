@@ -24,10 +24,10 @@ else()
     if (LLAMA_BUILD_SERVER)
         add_subdirectory(cli)
         add_subdirectory(server)
-		
+		add_subdirectory(embedded)
     endif()
 
-	add_subdirectory(embedded)
+	
 
     add_subdirectory(tokenize)
     add_subdirectory(tts)
