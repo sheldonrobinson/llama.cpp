@@ -1160,27 +1160,44 @@ void server_embedded_submit(common_params_sampling sampling_params,
         inputs.use_jinja             = use_jinja;
         inputs.parallel_tool_calls   = false;
         inputs.add_generation_prompt = true;
+		inputs.grammar 				 = sampling_params.grammar;
         auto chat_template_kwargs    = server_chat_params.chat_template_kwargs;
         for (const auto & [key, value] : chat_template_kwargs) {
             inputs.chat_template_kwargs[key] = value;
         }
+		// for (const auto & [key, value] : meta.chat_template_caps) {
+			// inputs.chat_template_kwargs[key] = value ? "true" : "false";
+		// }
         inputs.tool_choice         = !tools.empty() ? common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
                                                       common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
-        inputs.reasoning_format    = server_chat_params.reasoning_format;
-        auto enable_thinking_kwarg = json_value(chat_template_kwargs, "enable_thinking", std::string("false"));
-        if (enable_thinking_kwarg == "true") {
+
+        auto enable_thinking_kwarg = json_value(chat_template_kwargs, "enable_thinking", server_chat_params.enable_thinking ? std::string("true") : std::string("false"));
+        if (server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE || enable_thinking_kwarg == "true") {
             inputs.enable_thinking = use_jinja;
         } else if (enable_thinking_kwarg == "false") {
             inputs.enable_thinking = false;
         } else {
             inputs.enable_thinking = server_chat_params.enable_thinking;
         }
+		inputs.reasoning_format = inputs.enable_thinking ? server_chat_params.reasoning_format !=
+                                                       common_reasoning_format::COMMON_REASONING_FORMAT_NONE ?
+                                                        server_chat_params.reasoning_format :
+                                                        common_reasoning_format::COMMON_REASONING_FORMAT_AUTO
+                                                 : server_chat_params.reasoning_format;
     }
     common_chat_params chat_params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
     task_params        defaults;
 	defaults.sampling          = sampling_params;
     defaults.stream            = true;  // make sure we always use streaming mode
     defaults.timings_per_token = true;  // in order to get timings even when we cancel mid-way
+	common_chat_parser_params chat_parser_params;
+	chat_parser_params.reasoning_format = inputs.reasoning_format;
+	chat_parser_params.thinking_forced_open = chat_params.thinking_forced_open;
+	chat_parser_params.format               = chat_params.format;
+	chat_parser_params.reasoning_in_content =
+		defaults.stream && inputs.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE;
+	chat_parser_params.parse_tool_calls = inputs.tool_choice != common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
+	defaults.chat_parser_params         = chat_parser_params;
     auto & generate_completion = [&]() {
         result_timings out_timings;
         server_response_reader rd = server_ctx->get_response_reader();
@@ -1191,13 +1208,14 @@ void server_embedded_submit(common_params_sampling sampling_params,
             task.id                      = rd.get_new_id();
             task.index                   = 0;
             task.params                  = defaults;            // copy
-            task.cli_prompt              = chat_params.prompt;  // copy
-            task.cli_files               = input_files;         // copy
-            task.cli                     = true;
+			// OT USING  MTMD
+            // task.cli_prompt              = chat_params.prompt;  // copy
+            // task.cli_files               = input_files;         // copy
+            // task.cli                     = true;
 
             // chat template settings
-            task.params.chat_parser_params                  = common_chat_parser_params(chat_params);
-            task.params.chat_parser_params.reasoning_format = server_chat_params.reasoning_format;
+            // task.params.chat_parser_params                  = common_chat_parser_params(chat_params);
+            // task.params.chat_parser_params.reasoning_format = server_chat_params.reasoning_format;
             if (!chat_params.parser.empty()) {
                 task.params.chat_parser_params.parser.load(chat_params.parser);
             }
