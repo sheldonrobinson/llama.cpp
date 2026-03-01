@@ -981,8 +981,8 @@ void server_embedded_inference_svc(const common_params & args) {
     }
 
     // load the model
-    LOG_INF("%s: loading model\n", __func__);
-    if (!(*model_ctx.server_ctx).load_model(params)) {
+    LOG_INF("%s: checking whether model loaded\n", __func__);
+    if (model_ctx.state != server_model_status::SERVER_MODEL_STATUS_LOADED) {
         try {
             ctx_http.stop();
         } catch (...) {
