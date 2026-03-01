@@ -673,7 +673,7 @@ bool server_models::ensure_model_loaded(const std::string & name) {
 static std::function<void(int)> shutdown_handler;
 static std::atomic_flag g_is_terminating = ATOMIC_FLAG_INIT;
 static std::atomic<bool> g_is_interrupted = false;
-static std::unordered_map<std::string, server_core_context*> g_servers;
+static std::unordered_map<std::string, std::shared_ptr<server_core_context>> g_servers;
 
 std::string server_embedded_model_list() {
 	return g_modelManager.listModelsJson().dump();
@@ -724,23 +724,24 @@ void server_embedded_inference_svc(common_params params) {
 		return;
 	}
 
-    server_core_context ctx_http; 
 
-    auto & result = g_servers.emplace(std::make_pair(modelfilename, &ctx_http));
+    auto & result =
+        g_servers.emplace(std::make_pair(modelfilename, std::move(std::make_shared<server_core_context>())));
 
     if (!result.second) {
         return;
     }
-    
-    if (!ctx_http.init(params)) {
+    g_servers[modelfilename]->srv = std::make_unique<UVMemoryServer>(4, 50, 8);
+    auto & ctx_http               = result.first->second;
+    if (!ctx_http->init(params)) {
         g_servers.erase(modelfilename);
         return;
     }
 
     // start the HTTP server before loading the model to be able to serve /health requests
-    if (!ctx_http.start()) {
+    if (!ctx_http->start()) {
         try {
-            ctx_http.stop();
+            ctx_http->stop();
         } catch (...) {
             SRV_ERR("%s: failed to stop HTTP server after start failure\n", __func__);
         }
@@ -753,19 +754,19 @@ void server_embedded_inference_svc(common_params params) {
     LOG_INF("%s: checking whether model loaded\n", __func__);
     if (model_ctx.state != server_model_status::SERVER_MODEL_STATUS_LOADED) {
         try {
-            ctx_http.stop();
+            ctx_http->stop();
         } catch (...) {
             SRV_ERR("%s: failed to stop HTTP server after start failure\n", __func__);
         }
-        if (ctx_http.thread.joinable()) {
-            ctx_http.thread.join();
+        if (ctx_http->thread.joinable()) {
+            ctx_http->thread.join();
         }
         g_servers.erase(modelfilename);
         LOG_ERR("%s: exiting due to model loading error\n", __func__);
         return;
     }
 
-    ctx_http.is_ready.store(true);
+   ctx_http->is_ready.store(true);
 
     LOG_INF("%s: model loaded\n", __func__);
    
