@@ -903,7 +903,7 @@ bool server_embedded_submit(common_params_sampling sampling_params,
                             std::function<void(common_chat_msg)> response_cb) {
     ModelContext                    model_ctx  = g_modelManager.getModelContext(name);
 	
-	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_LOADED)
+	if(model_ctx.state != server_model_status::SERVER_MODEL_STATUS_LOADED)
 	{
 		return false;
 	}
@@ -951,7 +951,7 @@ bool server_embedded_submit(common_params_sampling sampling_params,
         }
 
     // Apply chat template to the list of messages
-        common_chat_params params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
+    common_chat_params params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
 
     embedded_context embedded_ctx(
         params,
@@ -972,4 +972,5 @@ bool server_embedded_submit(common_params_sampling sampling_params,
 	if(inference_thread.joinable()){
 		inference_thread.join();
 	}
+	return true;
 }
