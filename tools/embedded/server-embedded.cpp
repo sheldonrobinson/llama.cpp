@@ -670,199 +670,9 @@ bool server_models::ensure_model_loaded(const std::string & name) {
 
     return true;
 }
-
-server_core_res_ptr server_models::proxy_request(const server_core_req & req,
-                                                 const std::string &     method,
-                                                 const std::string &     name,
-                                                 bool                    update_last_used) {
-    auto meta = get_meta(name);
-    if (!meta.has_value()) {
-        throw std::runtime_error("model name=" + name + " is not found");
-    }
-    if (meta->status != SERVER_MODEL_STATUS_LOADED) {
-        throw std::invalid_argument("model name=" + name + " is not loaded");
-    }
-    if (update_last_used) {
-        std::unique_lock<std::mutex> lk(mutex);
-        mapping[name].meta.last_used = ggml_time_ms();
-    }
-	
-	std::string proxy_path = req.path;
-    if (!req.query_string.empty()) {
-        proxy_path += '?' + req.query_string;
-    }
-    auto proxy =
-        std::make_unique<server_core_proxy>(
-			method,
-			req.path,
-			req.query_string,
-			req.metadata,
-			req.body,
-			req.should_stop,
-			base_params.timeout_read,
-			base_params.timeout_write);
-    return proxy;
-}
-
-void server_models_routes::init_routes() {
-    this->get_router_props = [this](const server_core_req & req) {
-        std::string name = req.get_param("model");
-        if (name.empty()) {
-            // main instance
-            auto res = std::make_unique<server_core_res>();
-            res_ok(res, {
-                // TODO: add support for this on web UI
-                {"role",          "router"},
-                {"max_instances", 4}, // dummy value for testing
-                // this is a dummy response to make sure webui doesn't break
-                {"model_alias", "llama-server"},
-                {"model_path",  "none"},
-                {"default_generation_settings", {
-                    {"params", json{}},
-                    {"n_ctx",  0},
-                }},
-            });
-            return res;
-        }
-        return proxy_get(req);
-    };
-
-    this->proxy_get = [this](const server_core_req & req) {
-        std::string method = "GET";
-        std::string name = req.get_param("model");
-        bool autoload = is_autoload(params, req);
-        auto error_res = std::make_unique<server_core_res>();
-        if (!router_validate_model(name, models, autoload, error_res)) {
-            return error_res;
-        }
-        return models.proxy_request(req, method, name, false);
-    };
-
-    this->proxy_post = [this](const server_core_req & req) {
-        std::string method = "POST";
-        json body = json::parse(req.body);
-        std::string name = json_value(body, "model", std::string());
-        bool autoload = is_autoload(params, req);
-        auto error_res = std::make_unique<server_core_res>();
-        if (!router_validate_model(name, models, autoload, error_res)) {
-            return error_res;
-        }
-        return models.proxy_request(req, method, name, true); // update last usage for POST request only
-    };
-
-    this->post_router_models_load = [this](const server_core_req & req) {
-        auto res = std::make_unique<server_core_res>();
-        json body = json::parse(req.body);
-        std::string name = json_value(body, "model", std::string());
-         auto meta = models.get_meta(name);
-        if (!meta.has_value()) {
-            res_err(res, format_error_response("model is not found", ERROR_TYPE_NOT_FOUND));
-            return res;
-        }
-        if (meta->status == SERVER_MODEL_STATUS_LOADED) {
-            res_err(res, format_error_response("model is already loaded", ERROR_TYPE_INVALID_REQUEST));
-            return res;
-        }
-        models.load(meta->name);
-        res_ok(res, {{"success", true}});
-        return res;
-    };
-
-    this->get_router_models = [this](const server_core_req &) {
-        auto res = std::make_unique<server_core_res>();
-        json models_json = json::array();
-        auto all_models = models.get_all_meta();
-        std::time_t t = std::time(0);
-        for (const auto & meta : all_models) {
-            json status {
-                {"value",  server_model_status_to_string(meta.status)},
-                {"args",   meta.args},
-            };
-            if (!meta.preset.name.empty()) {
-                common_preset preset_copy = meta.preset;
-                unset_reserved_args(preset_copy, false);
-                status["preset"] = preset_copy.to_ini();
-            }
-            if (meta.is_failed()) {
-                status["exit_code"] = meta.exit_code;
-                status["failed"]    = true;
-            }
-            models_json.push_back(json {
-                {"id",       meta.name},
-				{"aliases",  meta.aliases},
-                {"tags",     meta.tags},
-                {"object",   "model"},    // for OAI-compat
-                {"owned_by", "llamacpp"}, // for OAI-compat
-                {"created",  t},          // for OAI-compat
-                {"status",   status},
-                // TODO: add other fields, may require reading GGUF metadata
-            });
-        }
-        res_ok(res, {
-            {"data", models_json},
-            {"object", "list"},
-        });
-        return res;
-    };
-
-    this->post_router_models_unload = [this](const server_core_req & req) {
-        auto res = std::make_unique<server_core_res>();
-        json body = json::parse(req.body);
-        std::string name = json_value(body, "model", std::string());
-        auto model = models.get_meta(name);
-        if (!model.has_value()) {
-            res_err(res, format_error_response("model is not found", ERROR_TYPE_INVALID_REQUEST));
-            return res;
-        }
-        if (!model->is_active()) {
-            res_err(res, format_error_response("model is not loaded", ERROR_TYPE_INVALID_REQUEST));
-            return res;
-        }
-        models.unload(model->name);
-        res_ok(res, {{"success", true}});
-        return res;
-    };
-}
-
 static std::function<void(int)> shutdown_handler;
 static std::atomic_flag g_is_terminating = ATOMIC_FLAG_INIT;
 static std::atomic<bool> g_is_interrupted = false;
-
-// this is to make sure handler_t never throws exceptions; instead, it returns an error response
-static server_core_context::handler_t ex_wrapper(server_core_context::handler_t func) {
-    return [func = std::move(func)](const server_core_req & req) -> server_core_res_ptr {
-        std::string message;
-        error_type error;
-        try {
-            return func(req);
-        } catch (const std::invalid_argument & e) {
-            // treat invalid_argument as invalid request (400)
-            error = ERROR_TYPE_INVALID_REQUEST;
-            message = e.what();
-        } catch (const std::exception & e) {
-            // treat other exceptions as server error (500)
-            error = ERROR_TYPE_SERVER;
-            message = e.what();
-        } catch (...) {
-            error = ERROR_TYPE_SERVER;
-            message = "unknown error";
-        }
-
-        auto res = std::make_unique<server_core_res>();
-        res->status = 500;
-        try {
-            json error_data = format_error_response(message, error);
-            res->status = json_value(error_data, "code", 500);
-            res->data = safe_json_to_str({{ "error", error_data }});
-            SRV_WRN("got exception: %s\n", res->data.c_str());
-        } catch (const std::exception & e) {
-            SRV_ERR("got another exception: %s | while handling exception: %s\n", e.what(), message.c_str());
-            res->data = "Internal Server Error";
-        }
-        return res;
-    };
-}
-
 static std::unordered_map<std::string, server_core_context*> g_servers;
 
 std::string server_embedded_model_list() {
@@ -1068,22 +878,6 @@ static std::string to_lower_copy(const std::string & value) {
     return lowered;
 }
 
-static bool should_strip_proxy_header(const std::string & header_name) {
-    // Headers that get duplicated when router forwards child responses
-    if (header_name == "server" || header_name == "transfer-encoding" ||
-        header_name == "content-length" ||  // quick fix for https://github.com/ggml-org/llama.cpp/issues/17710
-        header_name == "keep-alive") {
-        return true;
-    }
-
-    // Router injects CORS, child also sends them: duplicate
-    if (header_name.rfind("access-control-", 0) == 0) {
-        return true;
-    }
-
-    return false;
-}
-
 static bool should_stop() {
     return g_is_interrupted.load();
 }
@@ -1112,203 +906,66 @@ void server_embedded_submit(common_params_sampling sampling_params,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
                             std::function<bool(std::string)> streaming_response_cb,
-                            std::function<void(common_chat_msg_with_timings)> response_with_timings_cb) {
+                            std::function<void(common_chat_msg)> response_cb) {
     ModelContext                    model_ctx  = g_modelManager.getModelContext(name);
     std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
-    // shared between reader and writer threads
-    server_context_meta &           meta       = server_ctx->get_meta();
+    server_context_meta             meta               = server_ctx->get_meta();
     server_chat_params &            server_chat_params = meta.chat_params;
-    common_chat_templates_inputs inputs;
-    {
-        bool use_jinja               = !tools.empty() || server_chat_params.use_jinja;
-        inputs.messages              = messages;
-        inputs.tools                 = tools;
-        inputs.use_jinja             = use_jinja;
-        inputs.parallel_tool_calls   = false;
-        inputs.add_generation_prompt = true;
-		inputs.grammar 				 = sampling_params.grammar;
-        auto chat_template_kwargs    = server_chat_params.chat_template_kwargs;
-        for (const auto & [key, value] : chat_template_kwargs) {
-            inputs.chat_template_kwargs[key] = value;
-        }
-		// for (const auto & [key, value] : meta.chat_template_caps) {
-			// inputs.chat_template_kwargs[key] = value ? "true" : "false";
-		// }
-        inputs.tool_choice         = !tools.empty() ? common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
-                                                      common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
+    common_chat_templates_inputs    inputs;
 
-        auto enable_thinking_kwarg = json_value(chat_template_kwargs, "enable_thinking", server_chat_params.enable_thinking ? std::string("true") : std::string("false"));
-        if (server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE || enable_thinking_kwarg == "true") {
-            inputs.enable_thinking = use_jinja;
-        } else if (enable_thinking_kwarg == "false") {
-            inputs.enable_thinking = false;
-        } else {
-            inputs.enable_thinking = server_chat_params.enable_thinking;
-        }
-		inputs.reasoning_format = inputs.enable_thinking ? server_chat_params.reasoning_format !=
-                                                       common_reasoning_format::COMMON_REASONING_FORMAT_NONE ?
-                                                        server_chat_params.reasoning_format :
-                                                        common_reasoning_format::COMMON_REASONING_FORMAT_AUTO
-                                                 : server_chat_params.reasoning_format;
-    }
-    common_chat_params chat_params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
-    
-    auto & generate_completion = [&server_ctx, &streaming_response_cb, &response_with_timings_cb,
-									sampling_params, inputs, chat_params]()->std::string {
-        result_timings out_timings;
-        server_response_reader rd = server_ctx->get_response_reader();
-        server_task            task = server_task(SERVER_TASK_TYPE_COMPLETION);
-		task_params            server_task_params;
-		server_task_params.sampling          = sampling_params;
-		server_task_params.stream            = true;  // make sure we always use streaming mode
-		server_task_params.timings_per_token = true;  // in order to get timings even when we cancel mid-way
-		server_task_params.chat_parser_params.reasoning_format     = inputs.reasoning_format;
-		server_task_params.chat_parser_params.thinking_forced_open = chat_params.thinking_forced_open;
-		server_task_params.chat_parser_params.format               = chat_params.format;
-		server_task_params.chat_parser_params.reasoning_in_content =
-			server_task_params.stream &&
-			inputs.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE;
-		server_task_params.chat_parser_params.parse_tool_calls = inputs.tool_choice != common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
+        
+        
         {
-            std::vector<raw_buffer> input_files;
-            // TODO: reduce some copies here in the future
-            task.id                      = rd.get_new_id();
-            task.index                   = 0;
-            task.params                  = server_task_params;            // copy
-			// OT USING  MTMD
-            // task.cli_prompt              = chat_params.prompt;  // copy
-            // task.cli_files               = input_files;         // copy
-            // task.cli                     = true;
-
-            // chat template settings
-            // task.params.chat_parser_params                  = common_chat_parser_params(chat_params);
-            // task.params.chat_parser_params.reasoning_format = server_chat_params.reasoning_format;
-            if (!chat_params.parser.empty()) {
-                task.params.chat_parser_params.parser.load(chat_params.parser);
+            bool use_jinja               = !tools.empty() || server_chat_params.use_jinja;
+            inputs.messages              = messages;
+            inputs.tools                 = tools;
+            inputs.use_jinja             = use_jinja;
+            inputs.parallel_tool_calls   = false;
+            inputs.add_generation_prompt = true;
+            inputs.grammar               = sampling_params.grammar;
+            inputs.tool_choice           = !tools.empty() || server_chat_params.use_jinja ?
+                                               common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
+                                               common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
+            auto chat_template_kwargs    = server_chat_params.chat_template_kwargs;
+            for (const auto & [key, value] : chat_template_kwargs) {
+                inputs.chat_template_kwargs[key] = value;
             }
 
+            auto enable_thinking_kwarg =
+                json_value(chat_template_kwargs, "enable_thinking",
+                           server_chat_params.enable_thinking ? std::string("true") : std::string("false"));
+            if (server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE ||
+                server_chat_params.enable_thinking || enable_thinking_kwarg == "true") {
+                inputs.enable_thinking = true;
+            } else if (enable_thinking_kwarg == "false") {
+                inputs.enable_thinking = false;
+            } else {
+                inputs.enable_thinking = server_chat_params.enable_thinking;
+            }
+            inputs.reasoning_format =
+                inputs.enable_thinking ?
+                    server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE ?
+                    server_chat_params.reasoning_format :
+                    common_reasoning_format::COMMON_REASONING_FORMAT_AUTO :
+                    server_chat_params.reasoning_format;
         }
-        rd.post_task({ std::move(task) });
-        // wait for first result
-        server_task_result_ptr result = rd.next(should_stop);
-        std::string            curr_content, reasoning_content;
-        bool                   is_thinking = false;
 
-        while (result) {
-            if (should_stop()) {
-                break;
-            }
-            if (result->is_error()) {
-                json err_data = result->to_json();
-                if (err_data.contains("message")) {
-                    LOG_ERR("Error: %s\n", err_data["message"].get<std::string>().c_str());
-                } else {
-                    LOG_ERR("Error: %s\n", err_data.dump().c_str());
-                }
-                return curr_content;
-            }
-            auto res_partial = dynamic_cast<server_task_result_cmpl_partial *>(result.get());
-            if (res_partial) {
-                out_timings = std::move(res_partial->timings);
-                for (const auto & diff : res_partial->oaicompat_msg_diffs) {
-                    if (!diff.content_delta.empty()) {
-                        if (is_thinking) {
-                            is_thinking = false;
-                        }
-                        if (streaming_response_cb) {
-                            if(streaming_response_cb(diff.content_delta)){
-								break;
-							}
-                        }
-                        curr_content += diff.content_delta;
-                    }
-                    if (!diff.reasoning_content_delta.empty()) {
-                        is_thinking = true;
-                        if (streaming_response_cb) {
-                            if(streaming_response_cb(diff.reasoning_content_delta)){
-								break;
-							}
-                        }
-                        reasoning_content += diff.reasoning_content_delta;
-                    }
-                }
-            }
-            auto res_final = dynamic_cast<server_task_result_cmpl_final *>(result.get());
-            if (res_final) {
-                out_timings = std::move(res_final->timings);
-                break;
-            }
-            result = rd.next(should_stop);
-        }
-       
-        // server_response_reader automatically cancels pending tasks upon destruction
-        g_is_interrupted.store(false);
-        if (response_with_timings_cb) {
-            common_chat_msg message = common_chat_parse(curr_content, g_is_interrupted.load(), task.params.chat_parser_params);
-            message.reasoning_content = reasoning_content;
-            common_chat_msg_with_timings msg_with_timings(message, out_timings);
-            response_with_timings_cb(msg_with_timings);
-        }
-    };
-    std::string resp = generate_completion();
-	return;
-}
+    // Apply chat template to the list of messages
+        common_chat_params params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
 
-server_core_proxy::server_core_proxy(const std::string &                        method,
-                                     const std::string &                        path,
-									 const std::string &						query_string,
-                                     const std::map<std::string, std::string> & headers,
-                                     const std::string &                        body,
-                                     const std::function<bool()>                should_stop,
-                                     int32_t                                    timeout_read,
-                                     int32_t                                    timeout_write) {
-    std::string name = json_value(body, "model", std::string());
-	json jmessages = json_value(body, "messages", json::array());
-    json jtools = json_value(body, "tools", json());
-	
-	auto& messages = common_chat_msgs_parse_oaicompat(jmessages);
-	auto& tools = common_chat_tools_parse_oaicompat(jtools);
-	ModelContext model_ctx = g_modelManager.getModelContext(name);
-	
-	if (model_ctx.state != SERVER_MODEL_STATUS_LOADED) {
-        json err_msg;
-		std::string message("Model ");
-		message.append(name).append("not loaded");
-		err_msg["status"]= -1;
-		err_msg["message"] = message;
-		this->data = err_msg.dump();
-		return;
-    }
-	
-	server_core_context* core_ctx = g_servers[name];
-    std::shared_ptr<MemoryDuplexStream> conn = core_ctx->srv->create_connection();
-	
-	// wire up the receive end of the pipe
-    this->next = [&conn](std::string & out) -> bool {
-        return conn->recv_from_server(out); // false if EOF or pipe broken
-    };
+    embedded_context embedded_ctx(
+        params,
+        sampling_params,
+        messages, tools,
+        streaming_response_cb,
+        response_cb,
+        should_stop
+    );
 
-    auto check = [&]() -> bool {
-        return should_stop();
-    };
-	
-	auto streaming_response_cb = [&](std::string out) -> bool {
-        int err = conn->write(out.c_str(), strlen(out.c_str()));
-        return check() || err < 0;
-    };
+    std::thread inference_thread([&server_ctx]() { server_ctx->start_loop(); });
 
-    auto response_with_timings_cb = [&](common_chat_msg_with_timings out) {
-        std::vector<common_chat_msg> msgs;
-        msgs.push_back(out.message);
-        auto resp  = common_chat_msgs_to_json_oaicompat(msgs, false);
-        this->data = resp.dump();
-    };
-	
-	common_params_sampling sampling;
-	this->thread = std::thread([&]() {
-            server_embedded_submit(sampling, name, messages, tools, streaming_response_cb, response_with_timings_cb);
-		});
-	this->thread.detach();
-	
-	
+    result_timings timings;
+    std::string    assistant_content = embedded_ctx.generate_completion(
+        server_ctx->get_response_reader(),
+        timings);
 }
