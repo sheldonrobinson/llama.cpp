@@ -203,7 +203,7 @@ struct embedded_context {
                     std::vector<common_chat_tool> toolcalls,
                     std::function<bool(std::string)>&  streaming_cb,
                     std::function<void(common_chat_msg)>& response_cb,
-                     std::function<bool()>                  should_stop
+                     std::function<bool()>&                  should_function
     ) {
         chat_params                          = params;  
                     server_task_params.sampling  = sampling;
@@ -211,6 +211,7 @@ struct embedded_context {
                     tools                        = toolcalls;
                     streaming_response_cb        = streaming_cb;
                     response_with_timings_cb     = response_cb;
+					should_stop					 = stop_function;
                     server_task_params.stream  = true;  // make sure we always use streaming mode
                     server_task_params.timings_per_token = true;  // in order to get timings even when we cancel mid-way
         // defaults.return_progress = true; // TODO: show progress
