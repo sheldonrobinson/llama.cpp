@@ -970,6 +970,6 @@ bool server_embedded_submit(common_params_sampling sampling_params,
         server_ctx->get_response_reader(),
         timings);
 	if(inference_thread.joinable()){
-		th.join();
+		inference_thread.join();
 	}
 }
