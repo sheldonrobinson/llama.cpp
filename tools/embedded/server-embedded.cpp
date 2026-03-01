@@ -876,7 +876,7 @@ std::string server_embedded_model_list() {
 	// }
 }
 
-std::string server_embedded_inference_conf(const common_params & args) {
+void server_embedded_inference_svc(const common_params & args) {
     common_params params = args;
     // validate batch size for embeddings
     // embeddings require all tokens to be processed in a single ubatch
@@ -911,7 +911,7 @@ std::string server_embedded_inference_conf(const common_params & args) {
     // struct that contains llama context and inference
     ModelContext model_ctx = g_modelManager.getModelContext(modelfilename);
 	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_UNLOADED) {
-		return std::string();
+		return;
 	}
 
     server_core_context ctx_http; 
@@ -919,12 +919,12 @@ std::string server_embedded_inference_conf(const common_params & args) {
     auto & result = g_servers.emplace(std::make_pair(modelfilename, &ctx_http));
 
     if (!result.second) {
-        return std::string();
+        return;
     }
     
     if (!ctx_http.init(params)) {
         g_servers.erase(modelfilename);
-        return std::string();
+        return;
     }
 
     // register API routes
@@ -977,7 +977,7 @@ std::string server_embedded_inference_conf(const common_params & args) {
         }
         g_servers.erase(modelfilename);
         LOG_ERR("%s: exiting due to HTTP server error\n", __func__);
-        return std::string();
+        return;
     }
 
     // load the model
@@ -993,7 +993,7 @@ std::string server_embedded_inference_conf(const common_params & args) {
         }
         g_servers.erase(modelfilename);
         LOG_ERR("%s: exiting due to model loading error\n", __func__);
-        return std::string();
+        return;
     }
 
     routes.update_meta(*model_ctx.server_ctx);
@@ -1001,18 +1001,13 @@ std::string server_embedded_inference_conf(const common_params & args) {
 
     LOG_INF("%s: model loaded\n", __func__);
 	
-	return modelfilename;
-
-    
-}
-
-void server_embedded_inference_svc(std::string name){
-	ModelContext model_ctx = g_modelManager.getModelContext(name);
 	// this call blocks the main thread until queue_tasks.terminate() is called
 	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_LOADED)
 	{
 		(*model_ctx.server_ctx).start_loop();
 	}
+
+    
 }
 
 void server_embedded_ggml_abort_callback_t(const char* error_message) {
