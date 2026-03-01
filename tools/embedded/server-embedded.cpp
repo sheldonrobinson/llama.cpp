@@ -1195,28 +1195,28 @@ void server_embedded_submit(common_params_sampling sampling_params,
                                                  : server_chat_params.reasoning_format;
     }
     common_chat_params chat_params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
-    task_params        defaults;
-	defaults.sampling          = sampling_params;
-    defaults.stream            = true;  // make sure we always use streaming mode
-    defaults.timings_per_token = true;  // in order to get timings even when we cancel mid-way
-	common_chat_parser_params chat_parser_params;
-	chat_parser_params.reasoning_format = inputs.reasoning_format;
-	chat_parser_params.thinking_forced_open = chat_params.thinking_forced_open;
-	chat_parser_params.format               = chat_params.format;
-	chat_parser_params.reasoning_in_content =
-		defaults.stream && inputs.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE;
-	chat_parser_params.parse_tool_calls = inputs.tool_choice != common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
-	defaults.chat_parser_params         = chat_parser_params;
-    auto & generate_completion = [&]() {
+    
+    auto & generate_completion = [&server_ctx, sampling_params, inputs, chat_params]() {
         result_timings out_timings;
         server_response_reader rd = server_ctx->get_response_reader();
         server_task            task = server_task(SERVER_TASK_TYPE_COMPLETION);
+		task_params            server_task_params;
+		server_task_params.sampling          = sampling_params;
+		server_task_params.stream            = true;  // make sure we always use streaming mode
+		server_task_params.timings_per_token = true;  // in order to get timings even when we cancel mid-way
+		server_task_params.chat_parser_params.reasoning_format     = inputs.reasoning_format;
+		server_task_params.chat_parser_params.thinking_forced_open = chat_params.thinking_forced_open;
+		server_task_params.chat_parser_params.format               = chat_params.format;
+		server_task_params.chat_parser_params.reasoning_in_content =
+			server_task_params.stream &&
+			inputs.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE;
+		server_task_params.chat_parser_params.parse_tool_calls = inputs.tool_choice != common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
         {
             std::vector<raw_buffer> input_files;
             // TODO: reduce some copies here in the future
             task.id                      = rd.get_new_id();
             task.index                   = 0;
-            task.params                  = defaults;            // copy
+            task.params                  = server_task_params;            // copy
 			// OT USING  MTMD
             // task.cli_prompt              = chat_params.prompt;  // copy
             // task.cli_files               = input_files;         // copy
