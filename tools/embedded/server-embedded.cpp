@@ -1007,7 +1007,7 @@ std::string server_embedded_inference_conf(const common_params & args) {
 }
 
 void server_embedded_inference_svc(std::string name){
-	ModelContext model_ctx = g_modelManager.getModelContext(modelfilename);
+	ModelContext model_ctx = g_modelManager.getModelContext(name);
 	// this call blocks the main thread until queue_tasks.terminate() is called
 	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_LOADED)
 	{
