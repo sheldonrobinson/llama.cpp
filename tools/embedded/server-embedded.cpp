@@ -768,12 +768,6 @@ void server_embedded_inference_svc(common_params params) {
     ctx_http.is_ready.store(true);
 
     LOG_INF("%s: model loaded\n", __func__);
-	
-	// this call blocks the main thread until queue_tasks.terminate() is called
-	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_LOADED)
-	{
-		(*model_ctx.server_ctx).start_loop();
-	}
    
 }
 
@@ -961,8 +955,11 @@ void server_embedded_submit(common_params_sampling sampling_params,
         response_cb,
         should_stop
     );
-
-    std::thread inference_thread([&server_ctx]() { server_ctx->start_loop(); });
+	// this call blocks the main thread until queue_tasks.terminate() is called
+	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_LOADED)
+	{
+		std::thread inference_thread([&server_ctx]() { server_ctx->start_loop(); });
+	}
 
     result_timings timings;
     std::string    assistant_content = embedded_ctx.generate_completion(
