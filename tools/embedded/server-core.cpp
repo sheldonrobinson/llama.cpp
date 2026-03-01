@@ -190,12 +190,9 @@ bool server_core_context::init(const common_params & params) {
 }
 bool server_core_context::start() {
     // Bind and listen
-
-    // run the HTTP server in a thread
-    // thread = std::thread([this]() { srv->listen_with_uv(); });
-    // srv->wait_until_ready();
-	// start server loop
-    return srv->listen_with_uv();;
+    thread = std::thread([this]() { srv->listen_with_uv(); });
+	thread.detach();  // we will stop the server by calling srv->stop_with_uv(), which will cause listen_with_uv() to return
+    return true;
 }
 
 void server_core_context::stop() const {
