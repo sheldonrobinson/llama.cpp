@@ -895,13 +895,19 @@ void server_embedded_rm_model_status_listeners(){
 	g_modelManager.clearAllStateChangeListeners();
 }
 
-void server_embedded_submit(common_params_sampling sampling_params,
+bool server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
                             std::function<bool(std::string)> streaming_response_cb,
                             std::function<void(common_chat_msg)> response_cb) {
     ModelContext                    model_ctx  = g_modelManager.getModelContext(name);
+	
+	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_LOADED)
+	{
+		return false;
+	}
+	
     std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
     server_context_meta             meta               = server_ctx->get_meta();
     server_chat_params &            server_chat_params = meta.chat_params;
@@ -956,13 +962,14 @@ void server_embedded_submit(common_params_sampling sampling_params,
         should_stop
     );
 	// this call blocks the main thread until queue_tasks.terminate() is called
-	if(model_ctx.state == server_model_status::SERVER_MODEL_STATUS_LOADED)
-	{
-		std::thread inference_thread([&server_ctx]() { server_ctx->start_loop(); });
-	}
+	
+	std::thread inference_thread([&server_ctx]() { server_ctx->start_loop(); });
 
     result_timings timings;
     std::string    assistant_content = embedded_ctx.generate_completion(
         server_ctx->get_response_reader(),
         timings);
+	if(inference_thread.joinable()){
+		th.join();
+	}
 }
