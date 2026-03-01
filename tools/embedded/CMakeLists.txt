@@ -1,6 +1,5 @@
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
-message(ERROR "llama-embedded CMAKE_CURRENT_SOURCE_DIR:=${CMAKE_CURRENT_SOURCE_DIR}")
 # server-context containing the core server logic, used by llama-server and CLI
 
 set(TARGET llama-embedded)
@@ -71,7 +70,7 @@ endif()
 
 install(TARGETS llama-embedded RUNTIME)
 include_directories(../server)
-target_include_directories(llama-embedded PRIVATE ${CMAKE_SOURCE_DIR} "../mtmd" "${CMAKE_SOURCE_DIR}/tools/server")
+target_include_directories(llama-embedded PRIVATE ${CMAKE_SOURCE_DIR} "../mtmd" "../server")
 target_link_libraries(llama-embedded PRIVATE server-context PUBLIC common mtmd uv pthreadpool cpp-httplib ${CMAKE_THREAD_LIBS_INIT})
 
 
