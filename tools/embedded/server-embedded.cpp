@@ -872,7 +872,7 @@ static std::string to_lower_copy(const std::string & value) {
     return lowered;
 }
 
-static bool should_stop() {
+static bool g_should_stop() {
     return g_is_interrupted.load();
 }
 
@@ -952,14 +952,16 @@ bool server_embedded_submit(common_params_sampling sampling_params,
 
     // Apply chat template to the list of messages
     common_chat_params params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
-
+	std::function<bool()> stop_function = []()->bool {
+		return g_should_stop();
+	};
     embedded_context embedded_ctx(
         params,
         sampling_params,
         messages, tools,
         streaming_response_cb,
         response_cb,
-        should_stop
+        stop_function
     );
 	// this call blocks the main thread until queue_tasks.terminate() is called
 	
