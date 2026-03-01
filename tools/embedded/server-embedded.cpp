@@ -724,14 +724,13 @@ void server_embedded_inference_svc(common_params params) {
 		return;
 	}
 
-
     auto & result =
         g_servers.emplace(std::make_pair(modelfilename, std::move(std::make_shared<server_core_context>())));
 
     if (!result.second) {
         return;
     }
-    g_servers[modelfilename]->srv = std::make_unique<UVMemoryServer>(4, 50, 8);
+
     auto & ctx_http               = result.first->second;
     if (!ctx_http->init(params)) {
         g_servers.erase(modelfilename);
