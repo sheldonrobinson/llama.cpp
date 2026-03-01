@@ -203,7 +203,7 @@ struct embedded_context {
                     std::vector<common_chat_tool> toolcalls,
                     std::function<bool(std::string)>&  streaming_cb,
                     std::function<void(common_chat_msg)>& response_cb,
-                     std::function<bool()>&               should_function
+                     std::function<bool()>&               stop_function
     ) {
         chat_params                          = params;  
                     server_task_params.sampling  = sampling;
