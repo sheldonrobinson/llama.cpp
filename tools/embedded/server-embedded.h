@@ -254,7 +254,7 @@ LLAMA_EMBEDDED_API void server_embedded_add_model_status_listener(std::function<
 
 LLAMA_EMBEDDED_API void server_embedded_rm_model_status_listeners();
 
-LLAMA_EMBEDDED_API void server_embedded_inference_svc(const common_params& args);
+LLAMA_EMBEDDED_API void server_embedded_inference_svc(common_params args);
 
 LLAMA_EMBEDDED_API llama_tokens server_embedded_tokenize_svc(std::string model, std::string text);
 

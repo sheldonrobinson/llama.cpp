@@ -876,8 +876,8 @@ std::string server_embedded_model_list() {
 	// }
 }
 
-void server_embedded_inference_svc(const common_params & args) {
-    common_params params = args;
+void server_embedded_inference_svc(common_params params) {
+    // common_params params = args;
     // validate batch size for embeddings
     // embeddings require all tokens to be processed in a single ubatch
     // see https://github.com/ggml-org/llama.cpp/issues/12836
