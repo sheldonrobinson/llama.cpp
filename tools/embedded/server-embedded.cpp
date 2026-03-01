@@ -1196,7 +1196,8 @@ void server_embedded_submit(common_params_sampling sampling_params,
     }
     common_chat_params chat_params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
     
-    auto & generate_completion = [&server_ctx, sampling_params, inputs, chat_params]() {
+    auto & generate_completion = [&server_ctx, &streaming_response_cb , &response_with_timings_cb,
+									sampling_params, inputs, chat_params]() {
         result_timings out_timings;
         server_response_reader rd = server_ctx->get_response_reader();
         server_task            task = server_task(SERVER_TASK_TYPE_COMPLETION);
