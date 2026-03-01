@@ -955,7 +955,6 @@ void server_embedded_inference_svc(common_params params) {
         return;
     }
 
-    routes.update_meta(*model_ctx.server_ctx);
     ctx_http.is_ready.store(true);
 
     LOG_INF("%s: model loaded\n", __func__);
@@ -965,8 +964,7 @@ void server_embedded_inference_svc(common_params params) {
 	{
 		(*model_ctx.server_ctx).start_loop();
 	}
-
-    
+   
 }
 
 void server_embedded_ggml_abort_callback_t(const char* error_message) {
