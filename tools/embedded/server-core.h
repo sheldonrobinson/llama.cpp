@@ -57,9 +57,9 @@ typedef struct server_core_req {
 } server_core_req_t;
 
 
-struct server_core_context {
+typedef struct server_core_context {
 
-    std::unique_ptr<UVMemoryServer> srv = nullptr;
+    std::unique_ptr<UVMemoryServer> srv = std::make_unique<UVMemoryServer>(4,50,8);
 
     std::thread thread; // server thread
     std::atomic<bool> is_ready = false;
@@ -76,4 +76,4 @@ struct server_core_context {
 
     void get(const std::string & path, const handler_t & handler) const;
     void post(const std::string & path, const handler_t & handler) const;
-};
+} server_core_context_t;

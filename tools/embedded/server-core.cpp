@@ -27,10 +27,8 @@ static void log_server_request(const httplib::Request & req, const httplib::Resp
     SRV_DBG("response: %s\n", res.body.c_str());
 }
 
-bool server_core_context::init(const common_params & params, std::shared_ptr<UVMemoryServer> server) {
+bool server_core_context::init(const common_params & params) {
 
-    srv = std::make_unique<UVMemoryServer>(4,50,8);
-	
 	srv->set_default_headers({{"Server", "llama.cpp"}});
     srv->set_logger(log_server_request);
     srv->set_exception_handler([](const httplib::Request &, httplib::Response & res, const std::exception_ptr & ep) {
