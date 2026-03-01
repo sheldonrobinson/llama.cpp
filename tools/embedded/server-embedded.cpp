@@ -927,47 +927,6 @@ void server_embedded_inference_svc(common_params params) {
         return;
     }
 
-    // register API routes
-    // server_routes routes(params, *model_ctx.server_ctx);
-
-    // ctx_http.get("/health", ex_wrapper(routes.get_health));     // public endpoint (no API key check)
-    // ctx_http.get("/v1/health", ex_wrapper(routes.get_health));  // public endpoint (no API key check)
-    // ctx_http.get("/metrics", ex_wrapper(routes.get_metrics));
-    // ctx_http.get("/props", ex_wrapper(routes.get_props));
-    // ctx_http.post("/props", ex_wrapper(routes.post_props));
-    // ctx_http.post("/api/show", ex_wrapper(routes.get_api_show));
-    // ctx_http.get("/models", ex_wrapper(routes.get_models));     // public endpoint (no API key check)
-    // ctx_http.get("/v1/models", ex_wrapper(routes.get_models));  // public endpoint (no API key check)
-    // ctx_http.get("/api/tags",
-                 // ex_wrapper(routes.get_models));  // ollama specific endpoint. public endpoint (no API key check)
-    // ctx_http.post("/completion", ex_wrapper(routes.post_completions));  // legacy
-    // ctx_http.post("/completions", ex_wrapper(routes.post_completions));
-    // ctx_http.post("/v1/completions", ex_wrapper(routes.post_completions_oai));
-    // ctx_http.post("/chat/completions", ex_wrapper(routes.post_chat_completions));
-    // ctx_http.post("/v1/chat/completions", ex_wrapper(routes.post_chat_completions));
-    // ctx_http.post("/api/chat", ex_wrapper(routes.post_chat_completions));       // ollama specific endpoint
-	// ctx_http.post("/v1/responses",        ex_wrapper(routes.post_responses_oai));
-    // ctx_http.post("/responses",           ex_wrapper(routes.post_responses_oai));
-    // ctx_http.post("/v1/messages", ex_wrapper(routes.post_anthropic_messages));  // anthropic messages API
-    // ctx_http.post("/v1/messages/count_tokens", ex_wrapper(routes.post_anthropic_count_tokens));              // anthropic token counting
-    // ctx_http.post("/infill", ex_wrapper(routes.post_infill));
-    // ctx_http.post("/embedding", ex_wrapper(routes.post_embeddings));            // legacy
-    // ctx_http.post("/embeddings", ex_wrapper(routes.post_embeddings));
-    // ctx_http.post("/v1/embeddings", ex_wrapper(routes.post_embeddings_oai));
-    // ctx_http.post("/rerank", ex_wrapper(routes.post_rerank));
-    // ctx_http.post("/reranking", ex_wrapper(routes.post_rerank));
-    // ctx_http.post("/v1/rerank", ex_wrapper(routes.post_rerank));
-    // ctx_http.post("/v1/reranking", ex_wrapper(routes.post_rerank));
-    // ctx_http.post("/tokenize", ex_wrapper(routes.post_tokenize));
-    // ctx_http.post("/detokenize", ex_wrapper(routes.post_detokenize));
-    // ctx_http.post("/apply-template", ex_wrapper(routes.post_apply_template));
-    // LoRA adapters hotswap
-    // ctx_http.get("/lora-adapters", ex_wrapper(routes.get_lora_adapters));
-    // ctx_http.post("/lora-adapters", ex_wrapper(routes.post_lora_adapters));
-    // Save & load slots
-    // ctx_http.get("/slots", ex_wrapper(routes.get_slots));
-    // ctx_http.post("/slots/:id_slot", ex_wrapper(routes.post_slots));
-
     // start the HTTP server before loading the model to be able to serve /health requests
     if (!ctx_http.start()) {
         try {
