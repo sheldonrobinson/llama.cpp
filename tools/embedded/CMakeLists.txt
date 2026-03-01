@@ -1,6 +1,6 @@
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
-message(WARNING "llama-embedded CMAKE_CURRENT_SOURCE_DIR:=${CMAKE_CURRENT_SOURCE_DIR}")
+message(ERROR "llama-embedded CMAKE_CURRENT_SOURCE_DIR:=${CMAKE_CURRENT_SOURCE_DIR}")
 # server-context containing the core server logic, used by llama-server and CLI
 
 set(TARGET llama-embedded)
