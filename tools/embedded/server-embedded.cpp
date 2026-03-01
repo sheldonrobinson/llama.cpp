@@ -1141,6 +1141,15 @@ llama_tokens server_embedded_tokenize_svc(std::string model, std::string text)
     return common_tokenize(ctx, text, false, false);
 }
 
+void server_embedded_add_model_status_listener(std::function<void(const std::string &, server_model_status, server_model_status)> listener)
+{
+	g_modelManager.addStateChangeListener(listener);
+}
+
+void server_embedded_rm_model_status_listeners(){
+	g_modelManager.clearAllStateChangeListeners();
+}
+
 void server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
                             std::vector<common_chat_msg>  messages,

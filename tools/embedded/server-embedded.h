@@ -250,6 +250,10 @@ struct common_chat_msg_with_timings {
 
 };
 
+LLAMA_EMBEDDED_API void server_embedded_add_model_status_listener(std::function<void(const std::string &, server_model_status, server_model_status)> listener);
+
+LLAMA_EMBEDDED_API void server_embedded_rm_model_status_listeners();
+
 LLAMA_EMBEDDED_API void server_embedded_inference_svc(const common_params& args);
 
 LLAMA_EMBEDDED_API llama_tokens server_embedded_tokenize_svc(std::string model, std::string text);
