@@ -71,6 +71,10 @@ typedef enum server_embedded_status : int8_t {
 
 typedef void (*server_status_callback)(server_embedded_status_t);
 
+typedef void (*model_status_callback)(const char*, server_model_status_t, server_model_status_t);
+typedef bool (*server_streaming_response_callback)(const char*);
+typedef void (*server_response_callback)(common_chat_msg);
+
 #ifdef __cplusplus
 }
 #endif
@@ -334,8 +338,7 @@ struct common_chat_msg_with_timings {
         timings(other.timings) {}
 };
 
-LLAMA_EMBEDDED_API void server_embedded_add_model_status_listener(
-    std::function<void(const std::string &, server_model_status_t, server_model_status_t)> listener);
+LLAMA_EMBEDDED_API void server_embedded_add_model_status_listener(model_status_callback listener);
 
 LLAMA_EMBEDDED_API void server_embedded_rm_model_status_listeners();
 
@@ -345,16 +348,16 @@ LLAMA_EMBEDDED_API void server_embedded_inference_stop_all();
 
 LLAMA_EMBEDDED_API llama_tokens server_embedded_tokenize_svc(std::string model, std::string text);
 
-LLAMA_EMBEDDED_API void server_embedded_start(uint8_t numa_strategy, std::function<void(server_embedded_status_t)>& callback);
+LLAMA_EMBEDDED_API void server_embedded_start(uint8_t numa_strategy, server_status_callback callback);
 
-LLAMA_EMBEDDED_API void server_embedded_stop(std::function<void(server_embedded_status_t)>& callback);
+LLAMA_EMBEDDED_API void server_embedded_stop(server_status_callback callback);
 
 LLAMA_EMBEDDED_API bool server_embedded_submit(
     common_params_sampling                            sampling_params,
     std::string                                       model,
     std::vector<common_chat_msg>                      messages,
     std::vector<common_chat_tool>                     tools,
-    std::function<bool(std::string)>&                  streaming_response_cb,
-    std::function<void(common_chat_msg)>& response_with_timings_cb);
+    server_streaming_response_callback                streaming_response_cb,
+    server_response_callback						  response_cb);
 
 LLAMA_EMBEDDED_API std::string server_embedded_model_list();

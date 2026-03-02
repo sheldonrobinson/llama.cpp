@@ -783,7 +783,7 @@ void server_embedded_ggml_abort_callback_t(const char* error_message) {
 #endif
 }
 
-void server_embedded_start(uint8_t numa_strategy, std::function<void(server_embedded_status_t)>& callback) {
+void server_embedded_start(uint8_t numa_strategy, server_status_callback callback) {
 	if(callback){
 		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STARTING);
 	}
@@ -855,7 +855,7 @@ void server_embedded_start(uint8_t numa_strategy, std::function<void(server_embe
 	}
 }
 
-void server_embedded_stop(std::function<void(server_embedded_status_t)>& callback){
+void server_embedded_stop(server_status_callback callback){
 	if (g_is_terminating.test_and_set()) {
 		if(callback){
 			callback(server_embedded_status::SERVER_EMBEDDED_STATUS_INVALID);
@@ -894,9 +894,12 @@ llama_tokens server_embedded_tokenize_svc(std::string model, std::string text)
     return common_tokenize(ctx, text, false, false);
 }
 
-void server_embedded_add_model_status_listener(std::function<void(const std::string &, server_model_status_t, server_model_status_t)>& listener)
+void server_embedded_add_model_status_listener(model_status_callback listener)
 {
-	g_modelManager.addStateChangeListener(listener);
+	g_modelManager.addStateChangeListener(
+	[=](const std::string& tenant, server_model_status_t oldstatus, server_model_status_t newstatus){
+		listener(tenant.c_str(), oldstatus, newstatus);
+	});
 }
 
 void server_embedded_rm_model_status_listeners(){
@@ -907,9 +910,9 @@ bool server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
-                            std::function<bool(std::string)> streaming_response_cb,
-                            std::function<void(common_chat_msg)> response_cb) {
-    ModelContext                    model_ctx  = g_modelManager.getModelContext(name);
+                            server_streaming_response_callback streaming_response_cb,
+                            server_response_callback response_cb) {
+    ModelContext model_ctx  = g_modelManager.getModelContext(name);
 	
 	if(model_ctx.state != server_model_status::SERVER_MODEL_STATUS_LOADED)
 	{
@@ -963,12 +966,26 @@ bool server_embedded_submit(common_params_sampling sampling_params,
 	std::function<bool()> stop_function = []()->bool {
 		return g_should_stop();
 	};
+	std::function<bool(std::string)> embedded_streaming_cb = [streaming_response_cb](std::string txt)->bool {
+		if(streaming_response_cb){
+			return streaming_response_cb(txt.c_str());
+		}
+		
+		return false;
+	};
+	
+	std::function<void(common_chat_msg)> embedded_response_cb = [response_cb](common_chat_msg msg)->void {
+		if(response_cb){
+			response_cb(msg);
+		}
+	};
+	
     embedded_context embedded_ctx(
         params,
         sampling_params,
         messages, tools,
-        streaming_response_cb,
-        response_cb,
+        embedded_streaming_cb,
+        embedded_response_cb,
         stop_function
     );
 	// this call blocks the main thread until queue_tasks.terminate() is called
