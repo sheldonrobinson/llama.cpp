@@ -934,32 +934,23 @@ void server_embedded_submit(common_params_sampling sampling_params,
 		inputs.tool_choice           = !tools.empty() || server_chat_params.use_jinja ?
 										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
 										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
-		auto chat_template_kwargs    = server_chat_params.chat_template_kwargs;
-		for (const auto & [key, value] : chat_template_kwargs) {
-			inputs.chat_template_kwargs[key] = value;
-		}
-
-		auto enable_thinking_kwarg =
-			json_value(chat_template_kwargs, "enable_thinking",
-					   server_chat_params.enable_thinking ? std::string("true") : std::string("false"));
-		if (server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE ||
-			server_chat_params.enable_thinking || enable_thinking_kwarg == "true") {
-			inputs.enable_thinking = true;
-		} else if (enable_thinking_kwarg == "false") {
-			inputs.enable_thinking = false;
-		} else {
-			inputs.enable_thinking = server_chat_params.enable_thinking;
-		}
-		inputs.reasoning_format =
-			inputs.enable_thinking ?
-				server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE ?
-				server_chat_params.reasoning_format :
-				common_reasoning_format::COMMON_REASONING_FORMAT_AUTO :
-				server_chat_params.reasoning_format;
+		inputs.tool_choice           = !tools.empty() || server_chat_params.use_jinja ?
+										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
+										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
+        inputs.reasoning_format = server_chat_params.reasoning_format;
+        inputs.enable_thinking  = server_chat_params.enable_thinking;
 	}
 
     // Apply chat template to the list of messages
     common_chat_params params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
+	
+	common_chat_parser_params parser_params = common_chat_parser_params(params);
+    parser_params.reasoning_format = server_chat_params.reasoning_format;
+    parser_params.reasoning_in_content = server_chat_params.reasoning_format != COMMON_REASONING_FORMAT_NONE;
+    parser_params.thinking_forced_open =
+        server_chat_params.enable_thinking && server_chat_params.reasoning_format == COMMON_REASONING_FORMAT_NONE;
+    parser_params.parse_tool_calls = !tools.empty() || server_chat_params.use_jinja;
+
 	std::function<bool()> stop_function = []()->bool {
 		return g_should_stop();
 	};
@@ -967,6 +958,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
 	
     embedded_context embedded_ctx(
         params,
+		parser_params,
         sampling_params,
         messages, tools,
         streaming_response_cb,

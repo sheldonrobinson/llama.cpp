@@ -195,16 +195,18 @@ struct embedded_context {
     std::function<void(common_chat_msg)>	response_with_timings_cb = nullptr;
     std::function<bool()>              		should_stop = nullptr;
 
-    embedded_context(common_chat_params    params,
-                     common_params_sampling          sampling,
-                    std::vector<common_chat_msg>      msgs,
-                    std::vector<common_chat_tool> toolcalls,
-                    std::function<bool(std::string)>&  streaming_cb,
-                    std::function<void(common_chat_msg)>& response_cb,
-                    std::function<bool()>&               stop_function
+    embedded_context(common_chat_params				params,
+					 common_chat_parser_params		parser_params,
+                     common_params_sampling			sampling,
+                    std::vector<common_chat_msg>	msgs,
+                    std::vector<common_chat_tool>	toolcalls,
+                    std::function<bool(std::string)>&		streaming_cb,
+                    std::function<void(common_chat_msg)>&	response_cb,
+                    std::function<bool()>&					stop_function
     ) {
-        chat_params                          = params;  
+					chat_params                  = params;
                     server_task_params.sampling  = sampling;
+					server_task_params.chat_parser_params = chat_parser_params;
                     messages                     = msgs;
                     tools                        = toolcalls;
                     streaming_response_cb        = streaming_cb;
@@ -216,34 +218,21 @@ struct embedded_context {
     }
 
     std::string generate_completion(server_response_reader rd, result_timings & out_timings) {
-        {
-            server_task_params.chat_parser_params.thinking_forced_open = chat_params.thinking_forced_open;
-            server_task_params.chat_parser_params.format               = chat_params.format;
-            server_task_params.chat_parser_params.reasoning_in_content = 
-                server_task_params.stream && server_task_params.chat_parser_params.reasoning_format !=
-                                                 common_reasoning_format::COMMON_REASONING_FORMAT_NONE;
-            // TODO: reduce some copies here in the future
-            server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
-            task.id          = rd.get_new_id();
-            task.index       = 0;
-            task.params      = server_task_params;  // copy
-            task.cli_prompt  = chat_params.prompt;  // copy
-            task.cli_files   = input_files;         // copy
-            task.cli         = true;
+		{
+			if (!server_task_params.chat_parser_params.parser.empty()) {
+				server_task_params.chat_parser_params.parser.load(chat_params.parser);
+			}
+			// TODO: reduce some copies here in the future
+			server_task task = server_task(SERVER_TASK_TYPE_COMPLETION);
+			task.id          = rd.get_new_id();
+			task.index       = 0;
+			task.params      = server_task_params;  // copy
+			task.cli_prompt  = chat_params.prompt;  // copy
+			task.cli_files   = input_files;         // copy
+			task.cli         = true;
 
-            // chat template settings
-            task.params.chat_parser_params                  = common_chat_parser_params(chat_params);
-            // task.params.chat_parser_params.reasoning_format =server_task_params.stream && server_task_params.chat_parser_params.reasoning_format !=
-									// common_reasoning_format::COMMON_REASONING_FORMAT_NONE ?
-									// server_task_params.chat_parser_params.reasoning_format :
-							// server_task_params.chat_parser_params.reasoning_in_content ? common_reasoning_format::COMMON_REASONING_FORMAT_AUTO : server_task_params.chat_parser_params.reasoning_format;
-            if (!chat_params.parser.empty()) {
-                task.params.chat_parser_params.parser.load(chat_params.parser);
-            }
-
-            rd.post_task({ std::move(task) });
-        }
-
+			rd.post_task({ std::move(task) });
+		}
         // wait for first result
         server_task_result_ptr result = rd.next(should_stop);
         std::string curr_content, reasoning_content;
