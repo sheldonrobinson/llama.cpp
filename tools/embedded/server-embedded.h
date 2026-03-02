@@ -341,6 +341,8 @@ LLAMA_EMBEDDED_API void server_embedded_rm_model_status_listeners();
 
 LLAMA_EMBEDDED_API void server_embedded_inference_svc(common_params args);
 
+LLAMA_EMBEDDED_API void server_embedded_inference_stop_all();
+
 LLAMA_EMBEDDED_API llama_tokens server_embedded_tokenize_svc(std::string model, std::string text);
 
 LLAMA_EMBEDDED_API void server_embedded_start(uint8_t numa_strategy, std::function<void(server_embedded_status_t)>& callback);
