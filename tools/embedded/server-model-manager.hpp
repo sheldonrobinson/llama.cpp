@@ -35,7 +35,7 @@ struct ModelContext {
         history(other.history) {}
 
     std::shared_ptr<server_context> server_ctx = std::make_shared<server_context>();
-    server_model_status state = server_model_status::SERVER_MODEL_STATUS_UNLOADED;
+    server_model_status_t state = server_model_status::SERVER_MODEL_STATUS_UNLOADED;
     size_t memoryUsageMB = 0;
     int fitted_n_ctx = 0;
     int fitted_n_batch = 0;
@@ -169,7 +169,7 @@ public:
         models.erase(it);
     }
 
-    server_model_status getModelState(const std::string &tenantModelName) const {
+    server_model_status_t getModelState(const std::string &tenantModelName) const {
         std::shared_lock<std::shared_mutex> lock(globalMutex);
         auto it = models.find(tenantModelName);
         if (it == models.end()) return server_model_status::SERVER_MODEL_STATUS_UNLOADED;

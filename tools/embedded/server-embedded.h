@@ -53,20 +53,20 @@ extern "C" {
  *  └────────unloaded─────────┘
  */
 
-enum server_model_status {
-    SERVER_MODEL_STATUS_UNLOADED,
-    SERVER_MODEL_STATUS_LOADING,
-    SERVER_MODEL_STATUS_LOADED,
-    SERVER_MODEL_STATUS_INVALID
-};
+typedef enum server_model_status : int8_t {
+    SERVER_MODEL_STATUS_UNLOADED = 0,
+    SERVER_MODEL_STATUS_LOADING = 1,
+    SERVER_MODEL_STATUS_LOADED = 2,
+    SERVER_MODEL_STATUS_INVALID = 127
+} server_model_status_t;
 
-typedef enum server_embedded_status {
+typedef enum server_embedded_status : int8_t {
     // TODO: also add downloading state when the logic is added
-    SERVER_EMBEDDED_STATUS_STARTING,
-    SERVER_EMBEDDED_STATUS_STARTED,
-    SERVER_EMBEDDED_STATUS_STOPPING,
-    SERVER_EMBEDDED_STATUS_STOPPED,
-    SERVER_EMBEDDED_STATUS_INVALID
+    SERVER_EMBEDDED_STATUS_STARTING = 0,
+    SERVER_EMBEDDED_STATUS_STARTED = 1,
+    SERVER_EMBEDDED_STATUS_STOPPING = 2,
+    SERVER_EMBEDDED_STATUS_STOPPED = 3,
+    SERVER_EMBEDDED_STATUS_INVALID = 127
 } server_embedded_status_t;
 
 typedef void (*server_status_callback)(server_embedded_status_t);
@@ -175,12 +175,6 @@ struct server_models {
     // wait until the model instance is fully loaded (thread-safe)
     // return when the model is loaded or failed to load
     void wait_until_loaded(const std::string & name);
-
-    // proxy an HTTP request to the model instance
-    server_core_res_ptr proxy_request(const server_core_req & req,
-                                      const std::string &     method,
-                                      const std::string &     name,
-                                      bool                    update_last_used);
 
     // load the model if not loaded, otherwise do nothing (thread-safe)
     // return false if model is already loaded; return true otherwise (meta may need to be refreshed)
@@ -341,7 +335,7 @@ struct common_chat_msg_with_timings {
 };
 
 LLAMA_EMBEDDED_API void server_embedded_add_model_status_listener(
-    std::function<void(const std::string &, server_model_status, server_model_status)> listener);
+    std::function<void(const std::string &, server_model_status_t, server_model_status_t)> listener);
 
 LLAMA_EMBEDDED_API void server_embedded_rm_model_status_listeners();
 
@@ -349,16 +343,16 @@ LLAMA_EMBEDDED_API void server_embedded_inference_svc(common_params args);
 
 LLAMA_EMBEDDED_API llama_tokens server_embedded_tokenize_svc(std::string model, std::string text);
 
-LLAMA_EMBEDDED_API void server_embedded_start(uint8_t numa_strategy, server_status_callback & callback);
+LLAMA_EMBEDDED_API void server_embedded_start(uint8_t numa_strategy, std::function<void(server_embedded_status_t)>& callback);
 
-LLAMA_EMBEDDED_API void server_embedded_stop(server_status_callback & callback);
+LLAMA_EMBEDDED_API void server_embedded_stop(std::function<void(server_embedded_status_t)>& callback);
 
 LLAMA_EMBEDDED_API bool server_embedded_submit(
     common_params_sampling                            sampling_params,
     std::string                                       model,
     std::vector<common_chat_msg>                      messages,
     std::vector<common_chat_tool>                     tools,
-    std::function<bool(std::string)>                  streaming_response_cb,
-    std::function<void(common_chat_msg)> response_with_timings_cb);
+    std::function<bool(std::string)>&                  streaming_response_cb,
+    std::function<void(common_chat_msg)>& response_with_timings_cb);
 
 LLAMA_EMBEDDED_API std::string server_embedded_model_list();
