@@ -206,7 +206,7 @@ struct embedded_context {
     ) {
 					chat_params                  = params;
                     server_task_params.sampling  = sampling;
-					server_task_params.chat_parser_params = chat_parser_params;
+					server_task_params.chat_parser_params = parser_params;
                     messages                     = msgs;
                     tools                        = toolcalls;
                     streaming_response_cb        = streaming_cb;
