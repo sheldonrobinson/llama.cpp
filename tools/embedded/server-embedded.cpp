@@ -777,7 +777,7 @@ void server_embedded_ggml_abort_callback_t(const char* error_message) {
 #endif
 }
 
-void server_embedded_start(uint8_t numa_strategy, server_status_callback& callback) {
+void server_embedded_start(uint8_t numa_strategy, std::function<void(server_embedded_status_t)>& callback) {
 	if(callback){
 		callback(server_embedded_status::SERVER_EMBEDDED_STATUS_STARTING);
 	}
@@ -847,7 +847,7 @@ void server_embedded_start(uint8_t numa_strategy, server_status_callback& callba
 	}
 }
 
-void server_embedded_stop(server_status_callback& callback){
+void server_embedded_stop(std::function<void(server_embedded_status_t)>& callback){
 	if (g_is_terminating.test_and_set()) {
 		if(callback){
 			callback(server_embedded_status::SERVER_EMBEDDED_STATUS_INVALID);
@@ -886,7 +886,7 @@ llama_tokens server_embedded_tokenize_svc(std::string model, std::string text)
     return common_tokenize(ctx, text, false, false);
 }
 
-void server_embedded_add_model_status_listener(std::function<void(const std::string &, server_model_status_t, server_model_status_t)> listener)
+void server_embedded_add_model_status_listener(std::functionvoid(const std::string &, server_model_status_t, server_model_status_t)>& listener)
 {
 	g_modelManager.addStateChangeListener(listener);
 }
