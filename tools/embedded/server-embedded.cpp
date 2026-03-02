@@ -906,7 +906,7 @@ void server_embedded_rm_model_status_listeners(){
 	g_modelManager.clearAllStateChangeListeners();
 }
 
-bool server_embedded_submit(common_params_sampling sampling_params,
+void server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
@@ -916,7 +916,7 @@ bool server_embedded_submit(common_params_sampling sampling_params,
 	
 	if(model_ctx.state != server_model_status::SERVER_MODEL_STATUS_LOADED)
 	{
-		return false;
+		return;
 	}
 	
     std::shared_ptr<server_context> server_ctx = model_ctx.server_ctx;
@@ -999,5 +999,4 @@ bool server_embedded_submit(common_params_sampling sampling_params,
 	if(inference_thread.joinable()){
 		inference_thread.join();
 	}
-	return true;
 }

@@ -352,7 +352,7 @@ LLAMA_EMBEDDED_API void server_embedded_start(uint8_t numa_strategy, server_stat
 
 LLAMA_EMBEDDED_API void server_embedded_stop(server_status_callback callback);
 
-LLAMA_EMBEDDED_API bool server_embedded_submit(
+LLAMA_EMBEDDED_API void server_embedded_submit(
     common_params_sampling                            sampling_params,
     std::string                                       model,
     std::vector<common_chat_msg>                      messages,
