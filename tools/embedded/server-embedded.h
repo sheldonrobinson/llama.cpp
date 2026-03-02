@@ -236,9 +236,8 @@ struct embedded_context {
         // wait for first result
         server_task_result_ptr result = rd.next(should_stop);
         std::string curr_content, reasoning_content;
-        bool        is_thinking = false;
-        bool        is_partial_result =
-            false;  // whether we have received any partial result (used to determine whether to call the callback for the first time)
+        bool is_thinking = false;
+        bool is_partial_result = false;  // whether we have received any partial result (used to determine whether to call the callback for the first time)
         while (result) {
             if (should_stop()) {
                 break;
