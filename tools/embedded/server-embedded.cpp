@@ -946,7 +946,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
 	params.grammar = sampling_params.grammar;
 	common_chat_parser_params parser_params = common_chat_parser_params(params);
     parser_params.reasoning_format = server_chat_params.reasoning_format;
-    parser_params.reasoning_in_content = server_chat_params.reasoning_format != COMMON_REASONING_FORMAT_NONE;
+    parser_params.reasoning_in_content = streaming_response_cb != nullptr && server_chat_params.reasoning_format != COMMON_REASONING_FORMAT_NONE;
     parser_params.thinking_forced_open =
         server_chat_params.enable_thinking && server_chat_params.reasoning_format == COMMON_REASONING_FORMAT_NONE;
     parser_params.parse_tool_calls = !tools.empty() || server_chat_params.use_jinja;

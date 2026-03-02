@@ -212,7 +212,7 @@ struct embedded_context {
                     streaming_response_cb        = streaming_cb;
                     response_with_timings_cb     = response_cb;
 					should_stop					 = stop_function;
-                    server_task_params.stream  = true;  // make sure we always use streaming mode
+                    server_task_params.stream  = streaming_cb != nullptr;  // make sure we always use streaming mode
                     server_task_params.timings_per_token = true;  // in order to get timings even when we cancel mid-way
         // defaults.return_progress = true; // TODO: show progress
     }
