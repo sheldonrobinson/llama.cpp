@@ -186,14 +186,14 @@ struct server_models {
 };
 
 struct embedded_context {
-    common_chat_params                                chat_params;
-    std::vector<common_chat_msg>     messages;
-    std::vector<common_chat_tool>   tools;
-    std::vector<raw_buffer>                           input_files;
-    task_params                                       server_task_params;
-    std::function<bool(std::string)>                  streaming_response_cb    = nullptr;
-    std::function<void(common_chat_msg)> response_with_timings_cb = nullptr;
-    std::function<bool()>              should_stop = nullptr;
+    common_chat_params                      chat_params;
+    std::vector<common_chat_msg>     		messages;
+    std::vector<common_chat_tool>   		tools;
+    std::vector<raw_buffer>                 input_files;
+    task_params                             server_task_params;
+    std::function<bool(std::string)>        streaming_response_cb    = nullptr;
+    std::function<void(common_chat_msg)>	response_with_timings_cb = nullptr;
+    std::function<bool()>              		should_stop = nullptr;
 
     embedded_context(common_chat_params    params,
                      common_params_sampling          sampling,
@@ -201,7 +201,7 @@ struct embedded_context {
                     std::vector<common_chat_tool> toolcalls,
                     std::function<bool(std::string)>&  streaming_cb,
                     std::function<void(common_chat_msg)>& response_cb,
-                     std::function<bool()>&               stop_function
+                    std::function<bool()>&               stop_function
     ) {
         chat_params                          = params;  
                     server_task_params.sampling  = sampling;
@@ -357,7 +357,7 @@ LLAMA_EMBEDDED_API bool server_embedded_submit(
     std::string                                       model,
     std::vector<common_chat_msg>                      messages,
     std::vector<common_chat_tool>                     tools,
-    server_streaming_response_callback                streaming_response_cb,
-    server_response_callback						  response_cb);
+    std::function<bool(std::string)>                  streaming_response_cb,
+    std::function<void(common_chat_msg)>		  	  response_cb);
 
 LLAMA_EMBEDDED_API std::string server_embedded_model_list();
