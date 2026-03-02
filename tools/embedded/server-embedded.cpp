@@ -910,8 +910,8 @@ void server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
-                            std::function<bool(std::string)>& streaming_response_cb,
-                            std::function<void(common_chat_msg)>& response_cb) {
+                            std::function<bool(std::string)> streaming_response_cb,
+                            std::function<void(common_chat_msg)> response_cb) {
     ModelContext model_ctx  = g_modelManager.getModelContext(name);
 	
 	if(model_ctx.state != server_model_status::SERVER_MODEL_STATUS_LOADED)
@@ -923,62 +923,47 @@ void server_embedded_submit(common_params_sampling sampling_params,
     server_context_meta             meta               = server_ctx->get_meta();
     server_chat_params &            server_chat_params = meta.chat_params;
     common_chat_templates_inputs    inputs;
+	{
+		bool use_jinja               = !tools.empty() || server_chat_params.use_jinja;
+		inputs.messages              = messages;
+		inputs.tools                 = tools;
+		inputs.use_jinja             = use_jinja;
+		inputs.parallel_tool_calls   = false;
+		inputs.add_generation_prompt = true;
+		inputs.grammar               = sampling_params.grammar;
+		inputs.tool_choice           = !tools.empty() || server_chat_params.use_jinja ?
+										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
+										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
+		auto chat_template_kwargs    = server_chat_params.chat_template_kwargs;
+		for (const auto & [key, value] : chat_template_kwargs) {
+			inputs.chat_template_kwargs[key] = value;
+		}
 
-        
-        
-        {
-            bool use_jinja               = !tools.empty() || server_chat_params.use_jinja;
-            inputs.messages              = messages;
-            inputs.tools                 = tools;
-            inputs.use_jinja             = use_jinja;
-            inputs.parallel_tool_calls   = false;
-            inputs.add_generation_prompt = true;
-            inputs.grammar               = sampling_params.grammar;
-            inputs.tool_choice           = !tools.empty() || server_chat_params.use_jinja ?
-                                               common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
-                                               common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
-            auto chat_template_kwargs    = server_chat_params.chat_template_kwargs;
-            for (const auto & [key, value] : chat_template_kwargs) {
-                inputs.chat_template_kwargs[key] = value;
-            }
-
-            auto enable_thinking_kwarg =
-                json_value(chat_template_kwargs, "enable_thinking",
-                           server_chat_params.enable_thinking ? std::string("true") : std::string("false"));
-            if (server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE ||
-                server_chat_params.enable_thinking || enable_thinking_kwarg == "true") {
-                inputs.enable_thinking = true;
-            } else if (enable_thinking_kwarg == "false") {
-                inputs.enable_thinking = false;
-            } else {
-                inputs.enable_thinking = server_chat_params.enable_thinking;
-            }
-            inputs.reasoning_format =
-                inputs.enable_thinking ?
-                    server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE ?
-                    server_chat_params.reasoning_format :
-                    common_reasoning_format::COMMON_REASONING_FORMAT_AUTO :
-                    server_chat_params.reasoning_format;
-        }
+		auto enable_thinking_kwarg =
+			json_value(chat_template_kwargs, "enable_thinking",
+					   server_chat_params.enable_thinking ? std::string("true") : std::string("false"));
+		if (server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE ||
+			server_chat_params.enable_thinking || enable_thinking_kwarg == "true") {
+			inputs.enable_thinking = true;
+		} else if (enable_thinking_kwarg == "false") {
+			inputs.enable_thinking = false;
+		} else {
+			inputs.enable_thinking = server_chat_params.enable_thinking;
+		}
+		inputs.reasoning_format =
+			inputs.enable_thinking ?
+				server_chat_params.reasoning_format != common_reasoning_format::COMMON_REASONING_FORMAT_NONE ?
+				server_chat_params.reasoning_format :
+				common_reasoning_format::COMMON_REASONING_FORMAT_AUTO :
+				server_chat_params.reasoning_format;
+	}
 
     // Apply chat template to the list of messages
     common_chat_params params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
 	std::function<bool()> stop_function = []()->bool {
 		return g_should_stop();
 	};
-	// std::function<bool(std::string)> embedded_streaming_cb = [streaming_response_cb](std::string txt)->bool {
-		// if(streaming_response_cb){
-			// return streaming_response_cb(txt.c_str());
-		// }
-		
-		// return false;
-	// };
-	
-	// std::function<void(common_chat_msg)> embedded_response_cb = [response_cb](common_chat_msg msg)->void {
-		// if(response_cb){
-			// response_cb(msg);
-		// }
-	// };
+
 	
     embedded_context embedded_ctx(
         params,

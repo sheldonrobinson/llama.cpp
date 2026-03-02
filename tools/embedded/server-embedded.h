@@ -357,7 +357,7 @@ LLAMA_EMBEDDED_API void server_embedded_submit(
     std::string                                       model,
     std::vector<common_chat_msg>                      messages,
     std::vector<common_chat_tool>                     tools,
-    std::function<bool(std::string)>&                 streaming_response_cb,
-    std::function<void(common_chat_msg)>&		  	  response_cb);
+    std::function<bool(std::string)>                  streaming_response_cb,
+    std::function<void(common_chat_msg)> 		  	  response_cb);
 
 LLAMA_EMBEDDED_API std::string server_embedded_model_list();
