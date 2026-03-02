@@ -233,7 +233,10 @@ struct embedded_context {
 
             // chat template settings
             task.params.chat_parser_params                  = common_chat_parser_params(chat_params);
-            task.params.chat_parser_params.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
+            // task.params.chat_parser_params.reasoning_format =server_task_params.stream && server_task_params.chat_parser_params.reasoning_format !=
+									// common_reasoning_format::COMMON_REASONING_FORMAT_NONE ?
+									// server_task_params.chat_parser_params.reasoning_format :
+							// server_task_params.chat_parser_params.reasoning_in_content ? common_reasoning_format::COMMON_REASONING_FORMAT_AUTO : server_task_params.chat_parser_params.reasoning_format;
             if (!chat_params.parser.empty()) {
                 task.params.chat_parser_params.parser.load(chat_params.parser);
             }
