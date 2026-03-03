@@ -934,9 +934,6 @@ void server_embedded_submit(common_params_sampling sampling_params,
 		inputs.tool_choice           = !tools.empty() || server_chat_params.use_jinja ?
 										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
 										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
-		inputs.tool_choice           = !tools.empty() || server_chat_params.use_jinja ?
-										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
-										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
         inputs.reasoning_format = server_chat_params.reasoning_format;
         inputs.enable_thinking  = server_chat_params.enable_thinking;
 	}
