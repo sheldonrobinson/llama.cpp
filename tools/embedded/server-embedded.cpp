@@ -969,6 +969,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
     std::string    assistant_content = embedded_ctx.generate_completion(
         server_ctx->get_response_reader(),
         timings);
+	server_ctx->terminate();
 	if(inference_thread.joinable()){
 		inference_thread.join();
 	}
