@@ -963,12 +963,11 @@ void server_embedded_submit(common_params_sampling sampling_params,
         stop_function
     );
 	// this call blocks the main thread until queue_tasks.terminate() is called
-	
 	std::thread inference_thread([&server_ctx]() { server_ctx->start_loop(); });
 
     result_timings timings;
     std::string    assistant_content = embedded_ctx.generate_completion(
         server_ctx->get_response_reader(),
         timings);
-	server_ctx->terminate();
+	inference_thread.detach();
 }
