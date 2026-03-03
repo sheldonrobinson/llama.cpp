@@ -281,6 +281,9 @@ struct embedded_context {
             auto res_final = dynamic_cast<server_task_result_cmpl_final *>(result.get());
             if (res_final) {
                 out_timings = std::move(res_final->timings);
+				if (!server_task_params.stream) {
+					curr_content = res_final->content;
+				}
                 is_partial_result = false;
                 break;
             }
