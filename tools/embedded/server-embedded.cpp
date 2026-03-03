@@ -930,7 +930,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
 		inputs.use_jinja             = use_jinja;
 		inputs.parallel_tool_calls   = false;
 		inputs.add_generation_prompt = true;
-		inputs.grammar               = sampling_params.grammar;
+		inputs.grammar               = tools.empty() ? sampling_params.grammar : "";
 		inputs.tool_choice           = !tools.empty() || server_chat_params.use_jinja ?
 										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
 										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
