@@ -906,6 +906,10 @@ void server_embedded_rm_model_status_listeners(){
 	g_modelManager.clearAllStateChangeListeners();
 }
 
+void server_embedded_rm_model(std::string tenant){
+	g_modelManager.unloadModel(tenant);
+}
+
 void server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
                             std::vector<common_chat_msg>  messages,
