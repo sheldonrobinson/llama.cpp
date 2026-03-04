@@ -338,7 +338,7 @@ LLAMA_EMBEDDED_API void server_embedded_rm_model_status_listeners();
 
 LLAMA_EMBEDDED_API void server_embedded_inference_svc(common_params args);
 
-LLAMA_EMBEDDED_API void server_embedded_rm_model(std::string tenant);
+LLAMA_EMBEDDED_API void server_embedded_model_unload(std::string tenant);
 
 LLAMA_EMBEDDED_API void server_embedded_inference_stop_all();
 

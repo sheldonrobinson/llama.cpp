@@ -906,7 +906,7 @@ void server_embedded_rm_model_status_listeners(){
 	g_modelManager.clearAllStateChangeListeners();
 }
 
-void server_embedded_rm_model(std::string tenant){
+void server_embedded_model_unload(std::string tenant){
 	g_modelManager.unloadModel(tenant);
 }
 
