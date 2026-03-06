@@ -943,7 +943,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
         inputs.enable_thinking  = enable_thinking < 0 ? server_chat_params.enable_thinking : enable_thinking != 0;
 		
 		{
-           inputs.chat_template_kwargs["enable_thinking"] = inputs.enable_thinking ? "True" : "False";
+           inputs.chat_template_kwargs["enable_thinking"] = inputs.enable_thinking ? "true" : "false";
         }
 	}
 
