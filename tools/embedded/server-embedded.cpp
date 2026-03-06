@@ -912,7 +912,7 @@ void server_embedded_model_unload(std::string tenant){
 
 void server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
-							int8_t enable_thinking,
+							int32_t enable_thinking,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
                             std::function<bool(std::string)> streaming_response_cb,
