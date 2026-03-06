@@ -912,6 +912,7 @@ void server_embedded_model_unload(std::string tenant){
 
 void server_embedded_submit(common_params_sampling sampling_params,
 							std::string name,
+							int8_t enable_thinking,
                             std::vector<common_chat_msg>  messages,
                             std::vector<common_chat_tool> tools,
                             std::function<bool(std::string)> streaming_response_cb,
@@ -939,7 +940,11 @@ void server_embedded_submit(common_params_sampling sampling_params,
 										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_AUTO :
 										   common_chat_tool_choice::COMMON_CHAT_TOOL_CHOICE_NONE;
         inputs.reasoning_format = server_chat_params.reasoning_format;
-        inputs.enable_thinking  = server_chat_params.enable_thinking;
+        inputs.enable_thinking  = enable_thinking < 0 ? server_chat_params.enable_thinking : enable_thinking != 0;
+		
+		{
+           inputs.chat_template_kwargs["enable_thinking"] = inputs.enable_thinking ? "True" : "False";
+        }
 	}
 
     // Apply chat template to the list of messages
@@ -949,7 +954,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
     parser_params.reasoning_format = server_chat_params.reasoning_format;
     parser_params.reasoning_in_content = streaming_response_cb != nullptr && server_chat_params.reasoning_format != COMMON_REASONING_FORMAT_NONE;
     parser_params.thinking_forced_open =
-        server_chat_params.enable_thinking && server_chat_params.reasoning_format == COMMON_REASONING_FORMAT_NONE;
+        inputs.enable_thinking && server_chat_params.reasoning_format == COMMON_REASONING_FORMAT_NONE;
     parser_params.parse_tool_calls = !tools.empty() || server_chat_params.use_jinja;
 
 	std::function<bool()> stop_function = []()->bool {
