@@ -30,6 +30,7 @@ else()
 	
 
     add_subdirectory(tokenize)
+    add_subdirectory(parser)
     add_subdirectory(tts)
     add_subdirectory(mtmd)
     if (GGML_RPC)
@@ -41,4 +42,5 @@ else()
         add_subdirectory(export-lora)
     endif()
     add_subdirectory(fit-params)
+    add_subdirectory(results)
 endif()
