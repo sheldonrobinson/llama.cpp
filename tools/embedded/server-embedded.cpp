@@ -955,7 +955,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
     common_chat_params params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
 	params.grammar = tools.empty() ? sampling_params.grammar : "";
 	common_chat_parser_params parser_params = common_chat_parser_params(params);
-    parser_params.reasoning_format = inputs.reasoning_format
+    parser_params.reasoning_format = inputs.reasoning_format;
     parser_params.reasoning_in_content = streaming_response_cb != nullptr && inputs.reasoning_format != COMMON_REASONING_FORMAT_NONE;
     parser_params.thinking_forced_open =
         inputs.enable_thinking && inputs.reasoning_format == COMMON_REASONING_FORMAT_NONE;
