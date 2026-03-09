@@ -959,7 +959,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
     parser_params.reasoning_in_content = streaming_response_cb != nullptr && inputs.reasoning_format != COMMON_REASONING_FORMAT_NONE;
     parser_params.thinking_forced_open =
         inputs.enable_thinking && inputs.reasoning_format == COMMON_REASONING_FORMAT_NONE;
-    parser_params.parse_tool_calls = !tools.empty() || server_chat_params.use_jinja;
+    parser_params.parse_tool_calls = !tools.empty() || inputs.use_jinja;
 
 	std::function<bool()> stop_function = []()->bool {
 		return g_should_stop();
