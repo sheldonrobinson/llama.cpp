@@ -954,7 +954,7 @@ void server_embedded_submit(common_params_sampling sampling_params,
     // Apply chat template to the list of messages
     common_chat_params params = common_chat_templates_apply(server_chat_params.tmpls.get(), inputs);
 	params.grammar = tools.empty() ? sampling_params.grammar : "";
-	params.supports_thinking = inputs.enable_thinking;
+
 	common_chat_parser_params parser_params = common_chat_parser_params(params);
     parser_params.reasoning_format = inputs.reasoning_format;
     parser_params.reasoning_in_content = streaming_response_cb != nullptr && inputs.reasoning_format != COMMON_REASONING_FORMAT_NONE;
