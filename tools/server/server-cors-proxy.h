@@ -30,15 +30,26 @@ static server_http_res_ptr proxy_request(const server_http_req & req, std::strin
         throw std::runtime_error("unsupported URL scheme in target URL: " + parsed_url.scheme);
     }
 
-    SRV_INF("proxying %s request to %s://%s%s\n", method.c_str(), parsed_url.scheme.c_str(), parsed_url.host.c_str(), parsed_url.path.c_str());
+    SRV_INF("proxying %s request to %s://%s:%i%s\n", method.c_str(), parsed_url.scheme.c_str(), parsed_url.host.c_str(), parsed_url.port, parsed_url.path.c_str());
+
+    std::map<std::string, std::string> headers;
+    for (auto [key, value] : req.headers) {
+        auto new_key = key;
+        if (string_starts_with(new_key, "x-proxy-header-")) {
+            string_replace_all(new_key, "x-proxy-header-", "");
+        }
+        headers[new_key] = value;
+    }
 
     auto proxy = std::make_unique<server_http_proxy>(
             method,
+            parsed_url.scheme,
             parsed_url.host,
-            parsed_url.scheme == "http" ? 80 : 443,
+            parsed_url.port,
             parsed_url.path,
-            req.headers,
+            headers,
             req.body,
+            req.files,
             req.should_stop,
             600, // timeout_read (default to 10 minutes)
             600  // timeout_write (default to 10 minutes)
