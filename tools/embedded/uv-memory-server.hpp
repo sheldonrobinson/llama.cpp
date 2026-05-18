@@ -27,9 +27,6 @@
 // ====== Metrics Struct ======
 struct ServerMetrics {
     std::atomic<size_t> active_connections{0};
-    // std::atomic<size_t> total_messages_received{0};
-    // std::atomic<size_t> total_messages_sent{0};
-    // std::atomic<size_t> errors{0};
 };
 
 // ====== Lossless Blocking In-Memory Stream ======
@@ -85,7 +82,6 @@ public:
         if (closed_) return -1;
 
         server_to_client_queue_.push(std::string(ptr, size));
-        // metrics_.total_messages_sent++;
         s2c_cv_not_empty_.notify_one();
         return static_cast<ssize_t>(size);
     }
@@ -193,10 +189,6 @@ private:
     // Lossless queues
     std::queue<std::string> client_to_server_queue_;
     std::queue<std::string> server_to_client_queue_;
-	
-	// moodycamel::ConcurrentQueue<std::string> incoming_queue_;
-    // moodycamel::ConcurrentQueue<std::string> outgoing_queue_;
-    // std::atomic<bool> closed_;
 
     // Synchronization
     std::mutex c2s_mutex_;
@@ -223,7 +215,6 @@ public:
     UVMemoryServer(size_t thread_count = 4, size_t max_queue_size = 100, size_t batch_size = 8)
         : max_queue_size_(max_queue_size), batch_size_(batch_size) {
         loop_ = uv_loop_new();
-		// Alright — here’s the rest of the uv_memory_server.hpp starting from the UVMemoryServer definition so you have the complete drop‑in replacement with the lossless blocking wait / flow control mechanism integrated.
         uv_async_init(loop_, &async_handle_, [](uv_async_t* handle) {
             auto* self = static_cast<UVMemoryServer*>(handle->data);
             self->process_once();
@@ -320,7 +311,6 @@ private:
                             std::string reply = "Server echo: " + msg;
                             s->write(reply.data(), reply.size());
                         } catch (const std::exception& e) {
-                            // metrics_.errors++;
                             LOG_ERROR("Message handler exception: " << e.what());
                         }
                     });
@@ -329,7 +319,6 @@ private:
                         remove_connection(s);
                     }
                 } catch (const std::exception& e) {
-                    // metrics_.errors++;
                     LOG_ERROR("process_request exception: " << e.what());
                     remove_connection(s);
                 }
