@@ -308,7 +308,7 @@ private:
                         if (s->is_closed()) return;
                         try {
                             LOG_INFO("Server received: " << msg);
-                            std::string reply = "Server echo: " + msg;
+                            std::string reply = "" + msg;
                             s->write(reply.data(), reply.size());
                         } catch (const std::exception& e) {
                             LOG_ERROR("Message handler exception: " << e.what());
