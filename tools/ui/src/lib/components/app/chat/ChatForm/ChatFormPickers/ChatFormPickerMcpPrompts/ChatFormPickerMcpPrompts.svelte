@@ -162,7 +162,7 @@
 			return;
 		}
 
-		if (import.meta.env.DEV) {
+		if (import.meta.env.DEV && import.meta.env.VITE_DEBUG) {
 			console.log('[ChatFormPickerMcpPrompts] Fetching completions for:', {
 				serverName: selectedPrompt.serverName,
 				promptName: selectedPrompt.name,
@@ -181,7 +181,7 @@
 				value
 			);
 
-			if (import.meta.env.DEV) {
+			if (import.meta.env.DEV && import.meta.env.VITE_DEBUG) {
 				console.log('[ChatFormPickerMcpPrompts] Autocomplete result:', {
 					argName,
 					value,
@@ -322,7 +322,7 @@
 	}
 
 	let filteredPrompts = $derived.by(() => {
-		const sortedServers = mcpStore.getServersSorted();
+		const sortedServers = mcpStore.getServers();
 		const serverOrderMap = new Map(sortedServers.map((server, index) => [server.id, index]));
 
 		const sortedPrompts = [...prompts].sort((a, b) => {

@@ -11,6 +11,10 @@ export type {
 	ApiChatMessageData,
 	ApiModelStatus,
 	ApiModelDataEntry,
+	ApiModelLoadStage,
+	ApiModelsSseProgress,
+	ApiModelsSseData,
+	ApiModelsSseEvent,
 	ApiModelDetails,
 	ApiModelListResponse,
 	ApiLlamaCppServerProps,
@@ -29,7 +33,9 @@ export type {
 	ApiRouterModelsStatusResponse,
 	ApiRouterModelsListResponse,
 	ApiRouterModelsUnloadRequest,
-	ApiRouterModelsUnloadResponse
+	ApiRouterModelsUnloadResponse,
+	AudioInputFormat,
+	ApiStreamSession
 } from './api';
 
 // Chat types
@@ -69,7 +75,12 @@ export type {
 } from './database';
 
 // Model types
-export type { ModelModalities, ModelOption, ModalityCapabilities } from './models';
+export type {
+	ModelModalities,
+	ModelOption,
+	ModelLoadProgress,
+	ModalityCapabilities
+} from './models';
 
 // Settings types
 export type {
@@ -116,6 +127,8 @@ export type {
 	MCPServerConfig,
 	MCPClientConfig,
 	MCPServerSettingsEntry,
+	MCPServerDisplayInfo,
+	RecommendedMCPServer,
 	MCPToolCall,
 	OpenAIToolDefinition,
 	ServerStatus,
@@ -161,3 +174,9 @@ export type {
 
 // Tools types
 export type { ToolEntry, ToolGroup } from './tools';
+
+// Reasoning
+export type { ReasoningEffortLevel } from './reasoning';
+
+// Splash
+export type { SplashDimensions } from './splash';

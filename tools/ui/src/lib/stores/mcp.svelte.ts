@@ -12,19 +12,22 @@
  * - Lifecycle management (initialize, shutdown)
  * - Multi-server coordination
  * - Tool name conflict detection and resolution
- * - OpenAI-compatible tool definition generation
  * - Automatic tool-to-server routing
  * - Health checks
+ *
+ * MCP connection state and raw `Tool[]` per server are owned here; the
+ * OpenAI-compatible wire format for those tools is built in `toolsStore`
+ * (see {@link toolsStore.mcpEntries} / {@link toolsStore.getEnabledToolsForLLM}).
  *
  * @see MCPService in services/mcp.service.ts for protocol operations
  */
 
 import { browser } from '$app/environment';
-import { base } from '$app/paths';
 import { SETTINGS_KEYS } from '$lib/constants';
 import { MCPService } from '$lib/services/mcp.service';
 import { config, settingsStore } from '$lib/stores/settings.svelte';
 import { mcpResourceStore } from '$lib/stores/mcp-resources.svelte';
+import { serverStore } from '$lib/stores/server.svelte';
 import { mode } from 'mode-watcher';
 import {
 	parseMcpServerSettings,
@@ -38,25 +41,21 @@ import {
 	HealthCheckStatus,
 	MCPRefType,
 	ColorMode,
-	UrlProtocol,
-	JsonSchemaType,
-	ToolCallType
+	UrlProtocol
 } from '$lib/enums';
 import {
-	CORS_PROXY_ENDPOINT,
 	DEFAULT_CACHE_TTL_MS,
 	DEFAULT_MCP_CONFIG,
 	EXPECTED_THEMED_ICON_PAIR_COUNT,
 	MCP_ALLOWED_ICON_MIME_TYPES,
 	MCP_SERVER_ID_PREFIX,
-	MCP_RECONNECT_INITIAL_DELAY,
 	MCP_RECONNECT_BACKOFF_MULTIPLIER,
+	MCP_RECONNECT_INITIAL_DELAY,
 	MCP_RECONNECT_MAX_DELAY,
 	MCP_RECONNECT_ATTEMPT_TIMEOUT_MS
 } from '$lib/constants';
 import type {
 	MCPToolCall,
-	OpenAIToolDefinition,
 	ServerStatus,
 	ToolExecutionResult,
 	MCPClientConfig,
@@ -71,6 +70,7 @@ import type {
 	Tool,
 	HealthCheckState,
 	MCPServerSettingsEntry,
+	MCPServerDisplayInfo,
 	MCPServerConfig,
 	MCPResourceIcon,
 	MCPResourceAttachment,
@@ -86,7 +86,6 @@ class MCPStore {
 	private _toolCount = $state(0);
 	private _connectedServers = $state<string[]>([]);
 	private _healthChecks = $state<Record<string, HealthCheckState>>({});
-	private _proxyAvailable = $state(false);
 
 	private connections = new Map<string, MCPConnection>();
 	private toolsIndex = new Map<string, string>();
@@ -96,27 +95,8 @@ class MCPStore {
 	private initPromise: Promise<boolean> | null = null;
 	private activeFlowCount = 0;
 
-	constructor() {
-		if (browser) {
-			this.probeProxy();
-		}
-	}
-
-	/**
-	 * Probes the CORS proxy endpoint to determine availability.
-	 * The endpoint is only registered when llama-server runs with --ui-mcp-proxy.
-	 */
-	async probeProxy(): Promise<void> {
-		try {
-			const response = await fetch(`${base}${CORS_PROXY_ENDPOINT}`, { method: 'HEAD' });
-			this._proxyAvailable = response.status !== 404;
-		} catch {
-			this._proxyAvailable = false;
-		}
-	}
-
 	get isProxyAvailable(): boolean {
-		return this._proxyAvailable;
+		return serverStore.props?.cors_proxy_enabled ?? false;
 	}
 
 	/**
@@ -168,13 +148,20 @@ class MCPStore {
 				enabled: Boolean((entry as { enabled?: unknown })?.enabled),
 				url,
 				name: (entry as { name?: string })?.name,
-				requestTimeoutSeconds:
-					(entry as { requestTimeoutSeconds?: number })?.requestTimeoutSeconds ??
-					DEFAULT_MCP_CONFIG.requestTimeoutSeconds,
 				headers: headers || undefined,
 				useProxy: Boolean((entry as { useProxy?: unknown })?.useProxy)
 			} satisfies MCPServerSettingsEntry;
 		});
+	}
+
+	/**
+	 * Request timeout in milliseconds, read live from the global setting
+	 * so a change in Settings applies to every server immediately.
+	 */
+	#requestTimeoutMs(): number {
+		const seconds =
+			Number(config().mcpRequestTimeoutSeconds) || DEFAULT_MCP_CONFIG.requestTimeoutSeconds;
+		return Math.round(seconds * 1000);
 	}
 
 	/**
@@ -203,7 +190,7 @@ class MCPStore {
 			url: entry.url,
 			transport: detectMcpTransportFromUrl(entry.url),
 			handshakeTimeoutMs: connectionTimeoutMs,
-			requestTimeoutMs: Math.round(entry.requestTimeoutSeconds * 1000),
+			requestTimeoutMs: this.#requestTimeoutMs(),
 			headers,
 			useProxy: entry.useProxy
 		};
@@ -211,15 +198,18 @@ class MCPStore {
 
 	/**
 	 * Checks if a server is enabled for a given chat.
-	 * Only per-chat overrides (persisted in localStorage for new chats,
-	 * or in IndexedDB for existing conversations) control enabled state.
+	 * A per-chat override wins when present; a server without one resolves
+	 * to its own `enabled` flag in `mcpServers`.
 	 */
 	#checkServerEnabled(
 		server: MCPServerSettingsEntry,
 		perChatOverrides?: McpServerOverride[]
 	): boolean {
+		// Per-chat overrides win when present; missing entries inherit the
+		// server's own `enabled` flag so partial override lists are not all
+		// treated as disabled.
 		const override = perChatOverrides?.find((o) => o.serverId === server.id);
-		return override?.enabled ?? false;
+		return override?.enabled ?? server.enabled;
 	}
 
 	/**
@@ -250,7 +240,7 @@ class MCPStore {
 			protocolVersion: DEFAULT_MCP_CONFIG.protocolVersion,
 			capabilities: DEFAULT_MCP_CONFIG.capabilities,
 			clientInfo: DEFAULT_MCP_CONFIG.clientInfo,
-			requestTimeoutMs: Math.round(DEFAULT_MCP_CONFIG.requestTimeoutSeconds * 1000),
+			requestTimeoutMs: this.#requestTimeoutMs(),
 			servers
 		};
 	}
@@ -361,7 +351,6 @@ class MCPStore {
 	}
 
 	clearHealthCheck(serverId: string): void {
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		const { [serverId]: _removed, ...rest } = this._healthChecks;
 		this._healthChecks = rest;
 	}
@@ -386,7 +375,7 @@ class MCPStore {
 		return this.connections;
 	}
 
-	getServerLabel(server: MCPServerSettingsEntry): string {
+	getServerLabel(server: MCPServerDisplayInfo): string {
 		const healthState = this.getHealthCheckState(server.id);
 
 		if (healthState?.status === HealthCheckStatus.SUCCESS)
@@ -490,18 +479,12 @@ class MCPStore {
 			}
 		}
 
-		// Fallback: try favicon from root domain
-		const fallbackUrl = this.#getServerFaviconFallback(server.url);
-		if (fallbackUrl) {
-			return fallbackUrl;
-		}
-
-		return null;
+		return this.#getServerFaviconFallback(server.url);
 	}
 
 	/**
 	 * Construct a fallback favicon URL from the MCP server URL.
-	 * e.g. https://mcp.exa.ai/mcp -> https://exa.ai/favicon.ico
+	 * e.g. https://mcp.example.com/sse -> https://example.com/favicon.ico
 	 */
 	#getServerFaviconFallback(serverUrl: string): string | null {
 		try {
@@ -510,7 +493,7 @@ class MCPStore {
 			if (!rootDomain) return null;
 
 			const origin = `${url.protocol}//${rootDomain}`;
-			const candidates = ['favicon.ico', 'favicon.svg', 'favicon.png'];
+			const candidates = ['favicon.ico', 'favicon.png'];
 
 			for (const path of candidates) {
 				const faviconUrl = `${origin}/${path}`;
@@ -525,30 +508,9 @@ class MCPStore {
 		return null;
 	}
 
-	isAnyServerLoading(): boolean {
-		return this.getServers().some((s) => {
-			const state = this.getHealthCheckState(s.id);
-
-			return (
-				state.status === HealthCheckStatus.IDLE || state.status === HealthCheckStatus.CONNECTING
-			);
-		});
-	}
-
-	getServersSorted(): MCPServerSettingsEntry[] {
-		const servers = this.getServers();
-		if (this.isAnyServerLoading()) {
-			return servers;
-		}
-
-		return [...servers].sort((a, b) =>
-			this.getServerLabel(a).localeCompare(this.getServerLabel(b))
-		);
-	}
-
 	addServer(
-		serverData: Omit<MCPServerSettingsEntry, 'id' | 'requestTimeoutSeconds'> & { id?: string }
-	): void {
+		serverData: Omit<MCPServerSettingsEntry, 'id'> & { id?: string }
+	): MCPServerSettingsEntry {
 		const servers = this.getServers();
 		const newServer: MCPServerSettingsEntry = {
 			id: serverData.id || (uuid() ?? `server-${Date.now()}`),
@@ -556,11 +518,10 @@ class MCPStore {
 			url: serverData.url.trim(),
 			name: serverData.name,
 			headers: serverData.headers?.trim() || undefined,
-			requestTimeoutSeconds:
-				Number(config().mcpRequestTimeoutSeconds) || DEFAULT_MCP_CONFIG.requestTimeoutSeconds,
 			useProxy: serverData.useProxy
 		};
 		settingsStore.updateConfig(SETTINGS_KEYS.MCP_SERVERS, JSON.stringify([...servers, newServer]));
+		return newServer;
 	}
 
 	updateServer(id: string, updates: Partial<MCPServerSettingsEntry>): void {
@@ -968,73 +929,6 @@ class MCPStore {
 		}
 	}
 
-	getToolDefinitionsForLLM(): OpenAIToolDefinition[] {
-		const tools: OpenAIToolDefinition[] = [];
-
-		for (const connection of this.connections.values()) {
-			for (const tool of connection.tools) {
-				const rawSchema = (tool.inputSchema as Record<string, unknown>) ?? {
-					type: JsonSchemaType.OBJECT,
-					properties: {},
-					required: []
-				};
-
-				tools.push({
-					type: ToolCallType.FUNCTION as const,
-					function: {
-						name: tool.name,
-						description: tool.description,
-						parameters: this.normalizeSchemaProperties(rawSchema)
-					}
-				});
-			}
-		}
-
-		return tools;
-	}
-
-	private normalizeSchemaProperties(schema: Record<string, unknown>): Record<string, unknown> {
-		if (!schema || typeof schema !== 'object') {
-			return schema;
-		}
-
-		const normalized = { ...schema };
-		if (normalized.properties && typeof normalized.properties === 'object') {
-			const props = normalized.properties as Record<string, Record<string, unknown>>;
-			const normalizedProps: Record<string, Record<string, unknown>> = {};
-			for (const [key, prop] of Object.entries(props)) {
-				if (!prop || typeof prop !== 'object') {
-					normalizedProps[key] = prop;
-					continue;
-				}
-				const normalizedProp = { ...prop };
-				if (!normalizedProp.type && normalizedProp.default !== undefined) {
-					const defaultVal = normalizedProp.default;
-					if (typeof defaultVal === 'string') normalizedProp.type = 'string';
-					else if (typeof defaultVal === 'number')
-						normalizedProp.type = Number.isInteger(defaultVal) ? 'integer' : 'number';
-					else if (typeof defaultVal === 'boolean') normalizedProp.type = 'boolean';
-					else if (Array.isArray(defaultVal)) normalizedProp.type = 'array';
-					else if (typeof defaultVal === 'object' && defaultVal !== null)
-						normalizedProp.type = 'object';
-				}
-				if (normalizedProp.properties)
-					Object.assign(
-						normalizedProp,
-						this.normalizeSchemaProperties(normalizedProp as Record<string, unknown>)
-					);
-				if (normalizedProp.items && typeof normalizedProp.items === 'object')
-					normalizedProp.items = this.normalizeSchemaProperties(
-						normalizedProp.items as Record<string, unknown>
-					);
-				normalizedProps[key] = normalizedProp;
-			}
-			normalized.properties = normalizedProps;
-		}
-
-		return normalized;
-	}
-
 	getToolNames(): string[] {
 		return Array.from(this.toolsIndex.keys());
 	}
@@ -1045,6 +939,41 @@ class MCPStore {
 
 	getToolServer(toolName: string): string | undefined {
 		return this.toolsIndex.get(toolName);
+	}
+
+	/**
+	 * Resolve which configured MCP server owns a given tool name. Looks at
+	 * active connections first (fast path), then falls back to per-server
+	 * health-check data so server-side MCP proxies (where llama-server
+	 * executes MCP tools but the browser does not hold a direct connection)
+	 * still resolve tool names to their owning server.
+	 */
+	findServerForTool(toolName: string): string | undefined {
+		const fromIndex = this.toolsIndex.get(toolName);
+		if (fromIndex) return fromIndex;
+
+		for (const server of this.getServers()) {
+			const health = this._healthChecks[server.id];
+			if (!health || health.status !== HealthCheckStatus.SUCCESS) continue;
+			if (health.tools.some((tool) => tool.name === toolName)) {
+				return server.id;
+			}
+		}
+
+		return undefined;
+	}
+
+	/**
+	 * Resolve the favicon URL for an MCP server by one of its tool names.
+	 * Returns `null` if the tool is not provided by any configured MCP server,
+	 * or if the owning server has no icon to show.
+	 * Pair with {@link getServerFavicon} for direct server-id lookup.
+	 */
+	getServerFaviconForTool(toolName: string | undefined): string | null {
+		if (!toolName) return null;
+		const serverId = this.findServerForTool(toolName);
+		if (!serverId) return null;
+		return this.getServerFavicon(serverId);
 	}
 
 	hasPromptsSupport(): boolean {
@@ -1063,44 +992,27 @@ class MCPStore {
 	 * the user actually sends a message or uses prompts.
 	 * @param perChatOverrides - Per-chat server overrides to filter by enabled servers.
 	 *                          If provided (even empty array), only checks enabled servers.
-	 *                          If undefined, checks all servers with successful health checks.
+	 *                          If undefined, falls back to each server's own `enabled` flag.
 	 */
 	hasPromptsCapability(perChatOverrides?: McpServerOverride[]): boolean {
-		// If perChatOverrides is provided (even empty array), filter by enabled servers
+		let enabledServerIds: Set<string>;
+
 		if (perChatOverrides !== undefined) {
-			const enabledServerIds = new Set(
-				perChatOverrides.filter((o) => o.enabled).map((o) => o.serverId)
+			enabledServerIds = new Set(perChatOverrides.filter((o) => o.enabled).map((o) => o.serverId));
+		} else {
+			enabledServerIds = new Set(
+				this.getServers()
+					.filter((s) => s.enabled)
+					.map((s) => s.id)
 			);
+		}
 
-			// No enabled servers = no capability
-			if (enabledServerIds.size === 0) {
-				return false;
-			}
-
-			// Check health check states for enabled servers with prompts capability
-			for (const [serverId, state] of Object.entries(this._healthChecks)) {
-				if (!enabledServerIds.has(serverId)) continue;
-				if (
-					state.status === HealthCheckStatus.SUCCESS &&
-					state.capabilities?.server?.prompts !== undefined
-				) {
-					return true;
-				}
-			}
-
-			// Also check active connections as fallback
-			for (const [serverName, connection] of this.connections) {
-				if (!enabledServerIds.has(serverName)) continue;
-				if (connection.serverCapabilities?.prompts) {
-					return true;
-				}
-			}
-
+		if (enabledServerIds.size === 0) {
 			return false;
 		}
 
-		// No overrides provided - check all servers (global mode)
-		for (const state of Object.values(this._healthChecks)) {
+		for (const [serverId, state] of Object.entries(this._healthChecks)) {
+			if (!enabledServerIds.has(serverId)) continue;
 			if (
 				state.status === HealthCheckStatus.SUCCESS &&
 				state.capabilities?.server?.prompts !== undefined
@@ -1109,7 +1021,8 @@ class MCPStore {
 			}
 		}
 
-		for (const connection of this.connections.values()) {
+		for (const [serverName, connection] of this.connections) {
+			if (!enabledServerIds.has(serverName)) continue;
 			if (connection.serverCapabilities?.prompts) {
 				return true;
 			}
@@ -1331,7 +1244,6 @@ class MCPStore {
 			id: string;
 			enabled: boolean;
 			url: string;
-			requestTimeoutSeconds: number;
 			headers?: string;
 		}[],
 		skipIfChecked = true,
@@ -1422,7 +1334,7 @@ class MCPStore {
 			logs: []
 		});
 
-		const timeoutMs = Math.round(server.requestTimeoutSeconds * 1000);
+		const timeoutMs = this.#requestTimeoutMs();
 		const headers = this.parseHeaders(server.headers);
 
 		try {
@@ -1627,43 +1539,26 @@ class MCPStore {
 	 * the user actually sends a message or uses prompts.
 	 * @param perChatOverrides - Per-chat server overrides to filter by enabled servers.
 	 *                          If provided (even empty array), only checks enabled servers.
-	 *                          If undefined, checks all servers with successful health checks.
+	 *                          If undefined, falls back to each server's own `enabled` flag.
 	 */
 	hasResourcesCapability(perChatOverrides?: McpServerOverride[]): boolean {
-		// If perChatOverrides is provided (even empty array), filter by enabled servers
+		let enabledServerIds: Set<string>;
+
 		if (perChatOverrides !== undefined) {
-			const enabledServerIds = new Set(
-				perChatOverrides.filter((o) => o.enabled).map((o) => o.serverId)
+			enabledServerIds = new Set(perChatOverrides.filter((o) => o.enabled).map((o) => o.serverId));
+		} else {
+			enabledServerIds = new Set(
+				this.getServers()
+					.filter((s) => s.enabled)
+					.map((s) => s.id)
 			);
-			// No enabled servers = no capability
-			if (enabledServerIds.size === 0) {
-				return false;
-			}
-
-			// Check health check states for enabled servers with resources capability
-			for (const [serverId, state] of Object.entries(this._healthChecks)) {
-				if (!enabledServerIds.has(serverId)) continue;
-				if (
-					state.status === HealthCheckStatus.SUCCESS &&
-					state.capabilities?.server?.resources !== undefined
-				) {
-					return true;
-				}
-			}
-
-			// Also check active connections as fallback
-			for (const [serverName, connection] of this.connections) {
-				if (!enabledServerIds.has(serverName)) continue;
-				if (MCPService.supportsResources(connection)) {
-					return true;
-				}
-			}
-
+		}
+		if (enabledServerIds.size === 0) {
 			return false;
 		}
 
-		// No overrides provided - check all servers (global mode)
-		for (const state of Object.values(this._healthChecks)) {
+		for (const [serverId, state] of Object.entries(this._healthChecks)) {
+			if (!enabledServerIds.has(serverId)) continue;
 			if (
 				state.status === HealthCheckStatus.SUCCESS &&
 				state.capabilities?.server?.resources !== undefined
@@ -1672,7 +1567,8 @@ class MCPStore {
 			}
 		}
 
-		for (const connection of this.connections.values()) {
+		for (const [serverName, connection] of this.connections) {
+			if (!enabledServerIds.has(serverName)) continue;
 			if (MCPService.supportsResources(connection)) {
 				return true;
 			}
@@ -1682,14 +1578,20 @@ class MCPStore {
 	}
 
 	/**
-	 * Get list of servers that support resources.
+	 * Get list of enabled servers that support resources.
 	 * Checks active connections first, then health check state as fallback.
 	 */
 	getServersWithResources(): string[] {
+		const enabledServerIds = new Set(
+			this.getServers()
+				.filter((s) => s.enabled)
+				.map((s) => s.id)
+		);
 		const servers: string[] = [];
 
 		// Check active connections
 		for (const [name, connection] of this.connections) {
+			if (!enabledServerIds.has(name)) continue;
 			if (MCPService.supportsResources(connection) && !servers.includes(name)) {
 				servers.push(name);
 			}
@@ -1697,6 +1599,7 @@ class MCPStore {
 
 		// Also check health check states for servers not yet connected
 		for (const [serverId, state] of Object.entries(this._healthChecks)) {
+			if (!enabledServerIds.has(serverId)) continue;
 			if (
 				!servers.includes(serverId) &&
 				state.status === HealthCheckStatus.SUCCESS &&
