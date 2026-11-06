@@ -220,153 +220,51 @@ bool EmbeddedBackend::process_models(Response& resp) {
 }
 
 bool EmbeddedBackend::process_completion(const Request& req, Response& resp) {
+    // Delegate to the real server_context integration via EmbeddedServer
+    if (server_) {
+        resp = server_->execute_internal(req);
+        return resp.status_code >= 200 && resp.status_code < 300;
+    }
     if (!model_loaded_) {
         resp.status_code = 503;
         resp.body = "{\"error\":{\"message\":\"Model not loaded\",\"type\":\"unavailable_error\",\"code\":503}}";
         return false;
     }
-
-    json body;
-    try {
-        body = json::parse(req.payload);
-    } catch (...) {
-        body = json::object();
-    }
-
-    std::string prompt = body.value("prompt", "");
-    std::string model = body.value("model", config_.model_path);
-    int max_tokens = body.value("max_tokens", 128);
-
-    json choice;
-    choice["index"] = 0;
-    std::string text = "[embedded completion for model: " + model + "]\n";
-    text += "Prompt: " + prompt.substr(0, 100) + "...\n";
-    text += "(This is a placeholder response. Real integration ";
-    text += "would call llama.cpp inference APIs.)";
-    choice["text"] = text;
-    choice["logprobs"] = nullptr;
-    choice["finish_reason"] = "stop";
-
-    json choices = json::array();
-    choices.push_back(choice);
-
-    json usage;
-    usage["prompt_tokens"] = static_cast<int>(prompt.size() / 4);
-    usage["completion_tokens"] = max_tokens;
-    usage["total_tokens"] = usage["prompt_tokens"].get<int>() + max_tokens;
-
-    json result;
-    result["id"] = "cmpl-embedded";
-    result["object"] = "text_completion";
-    result["created"] = 0;
-    result["model"] = model;
-    result["choices"] = choices;
-    result["usage"] = usage;
-
-    resp.status_code = 200;
-    resp.body = result.dump();
-    resp.json_data = result;
-    return true;
+    resp.status_code = 503;
+    resp.body = "{\"error\":{\"message\":\"server not bound\",\"type\":\"unavailable_error\",\"code\":503}}";
+    return false;
 }
 
 bool EmbeddedBackend::process_chat_completion(const Request& req, Response& resp) {
+    // Delegate to the real server_context integration via EmbeddedServer
+    if (server_) {
+        resp = server_->execute_internal(req);
+        return resp.status_code >= 200 && resp.status_code < 300;
+    }
     if (!model_loaded_) {
         resp.status_code = 503;
         resp.body = "{\"error\":{\"message\":\"Model not loaded\",\"type\":\"unavailable_error\",\"code\":503}}";
         return false;
     }
-
-    json body;
-    try {
-        body = json::parse(req.payload);
-    } catch (...) {
-        body = json::object();
-    }
-
-    std::string model = body.value("model", config_.model_path);
-    json messages = body.value("messages", json::array());
-    int max_tokens = body.value("max_tokens", 128);
-
-    std::string content = "[embedded chat response for model: " + model + "]\n";
-    content += "Received " + std::to_string(messages.size()) + " messages.\n";
-    content += "(This is a placeholder response. Real integration ";
-    content += "would call llama.cpp chat completion APIs.)";
-
-    json message;
-    message["role"] = "assistant";
-    message["content"] = content;
-
-    json choice;
-    choice["index"] = 0;
-    choice["message"] = message;
-    choice["finish_reason"] = "stop";
-
-    json choices = json::array();
-    choices.push_back(choice);
-
-    json usage;
-    usage["prompt_tokens"] = 50;
-    usage["completion_tokens"] = max_tokens;
-    usage["total_tokens"] = 50 + max_tokens;
-
-    json result;
-    result["id"] = "chatcmpl-embedded";
-    result["object"] = "chat.completion";
-    result["created"] = 0;
-    result["model"] = model;
-    result["choices"] = choices;
-    result["usage"] = usage;
-
-    resp.status_code = 200;
-    resp.body = result.dump();
-    resp.json_data = result;
-    return true;
+    resp.status_code = 503;
+    resp.body = "{\"error\":{\"message\":\"server not bound\",\"type\":\"unavailable_error\",\"code\":503}}";
+    return false;
 }
 
 bool EmbeddedBackend::process_embeddings(const Request& req, Response& resp) {
+    // Delegate to the real server_context integration via EmbeddedServer
+    if (server_) {
+        resp = server_->execute_internal(req);
+        return resp.status_code >= 200 && resp.status_code < 300;
+    }
     if (!model_loaded_) {
         resp.status_code = 503;
         resp.body = "{\"error\":{\"message\":\"Model not loaded\",\"type\":\"unavailable_error\",\"code\":503}}";
         return false;
     }
-
-    json body;
-    try {
-        body = json::parse(req.payload);
-    } catch (...) {
-        body = json::object();
-    }
-
-    json input = body.value("input", "");
-    std::string model = body.value("model", config_.model_path);
-
-    json data = json::array();
-    if (input.is_string()) {
-        json item;
-        item["object"] = "embedding";
-        item["index"] = 0;
-        item["embedding"] = json::array();
-        data.push_back(item);
-    } else if (input.is_array()) {
-        for (size_t i = 0; i < input.size(); i++) {
-            json item;
-            item["object"] = "embedding";
-            item["index"] = static_cast<int>(i);
-            item["embedding"] = json::array();
-            data.push_back(item);
-        }
-    }
-
-    json result;
-    result["object"] = "list";
-    result["data"] = data;
-    result["model"] = model;
-    result["usage"] = {{"prompt_tokens", 0}, {"total_tokens", 0}};
-
-    resp.status_code = 200;
-    resp.body = result.dump();
-    resp.json_data = result;
-    return true;
+    resp.status_code = 503;
+    resp.body = "{\"error\":{\"message\":\"server not bound\",\"type\":\"unavailable_error\",\"code\":503}}";
+    return false;
 }
 
 // ============================================================================
@@ -893,149 +791,115 @@ libopenai::Response EmbeddedServer::execute_internal(const libopenai::Request& r
     std::string bare = ep;
     if (bare.size() > 3 && bare.substr(0, 3) == "/v1") bare = bare.substr(3);
 
-    json body;
-    try {
-        body = json::parse(req.payload);
-    } catch (...) {
-        body = json::object();
-    }
+    // Route through server_routes handlers - every endpoint served by
+    // server_context, no 501 fall-through for registered routes.
+    auto call_route = [&](const server_http_context::handler_t& handler) -> Response {
+        if (!handler) {
+            Response r;
+            r.status_code = 501;
+            r.body = "{\"error\":{\"message\":\"not implemented\",\"type\":\"not_implemented_error\",\"code\":501}}";
+            return r;
+        }
+        static const std::function<bool()> should_stop_false = []() { return false; };
+        server_http_req sreq{
+            {},                                    // params
+            {},                                    // headers
+            ep,                                    // path
+            "",                                    // query_string
+            req.payload,                           // body
+            {},                                    // files
+            should_stop_false                      // should_stop
+        };
+        for (const auto& kv : req.headers) {
+            sreq.headers[kv.first] = kv.second;
+        }
+        auto hres = handler(sreq);
+        Response r;
+        r.status_code = hres->status;
+        r.body = hres->data;
+        try {
+            r.json_data = json::parse(hres->data);
+        } catch (...) {
+            // not JSON, leave json_data empty
+        }
+        return r;
+    };
 
-    // Create a response reader for this request
-    auto reader = server_ctx_.get_response_reader();
-
-    // ------------------------------------------------------------------
-    // GET /models - list available models
-    // ------------------------------------------------------------------
+    // GET /models
     if (bare == "/models" && req.method == "GET") {
-        json data = json::array();
-        json model_entry;
-        model_entry["id"] = config_.model_path;
-        model_entry["object"] = "model";
-        model_entry["created"] = 0;
-        model_entry["owned_by"] = "embedded";
-        model_entry["root"] = config_.model_path;
-        model_entry["parent"] = nullptr;
-        data.push_back(model_entry);
-
-        json models_list;
-        models_list["object"] = "list";
-        models_list["data"] = data;
-
-        resp.status_code = 200;
-        resp.body = models_list.dump();
-        resp.json_data = models_list;
-        return resp;
+        return call_route(routes_->get_models);
     }
 
-    // ------------------------------------------------------------------
-    // POST /completions and POST /chat/completions - text generation
-    // ------------------------------------------------------------------
-    if ((bare == "/completions" || bare == "/chat/completions") && req.method == "POST") {
-        std::string prompt;
-        if (bare == "/completions") {
-            prompt = body.value("prompt", "");
-        } else {
-            // Build a simple prompt from messages
-            json messages = body.value("messages", json::array());
-            for (const auto& msg : messages) {
-                std::string role = msg.value("role", "user");
-                std::string content = msg.value("content", "");
-                if (!prompt.empty()) prompt += "\n";
-                prompt += role + ": " + content;
-            }
-            prompt += "\nassistant: ";
+    // POST endpoints - route through server_routes
+    if (req.method == "POST") {
+        if (bare == "/completions" || bare == "/completion") {
+            return call_route(routes_->post_completions);
         }
-
-        int max_tokens = body.value("max_tokens", 128);
-        double temperature = body.value("temperature", 0.7);
-
-        // Tokenize the prompt using the server_context's vocab
-        const llama_model* model = llama_get_model(server_ctx_.get_llama_context());
-        const llama_vocab* vocab = llama_model_get_vocab(model);
-
-        std::vector<llama_token> tokens(1024);
-        int n = llama_tokenize(
-            vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
-            tokens.data(), static_cast<int32_t>(tokens.size()), true, false);
-        if (n < 0) {
-            tokens.resize(-n);
-            n = llama_tokenize(
-                vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
-                tokens.data(), static_cast<int32_t>(tokens.size()), true, false);
+        if (bare == "/v1/completions") {
+            return call_route(routes_->post_completions_oai);
         }
-        if (n <= 0) {
-            resp.status_code = 400;
-            resp.body = "{\"error\":{\"message\":\"Failed to tokenize prompt\",\"type\":\"invalid_request_error\",\"code\":400}}";
-            return resp;
-        }
-        tokens.resize(static_cast<size_t>(n));
-
-        // Build server_task for completion
-        server_task task(SERVER_TASK_TYPE_COMPLETION);
-        task.id = reader.get_new_id();
-        server_tokens st(tokens, false);
-        task.tokens = std::move(st);
-
-        task.params.stream = false;
-        task.params.n_predict = max_tokens;
-        task.params.sampling.temp = (float)temperature;
-        task.params.sampling.top_k = 40;
-        task.params.sampling.top_p = 0.9f;
-        // Speculative decoding is configured via params_.speculative which is
-        // part of common_params passed to server_ctx_.load_model().
-
-        // Set response type based on endpoint
         if (bare == "/chat/completions") {
-            task.params.res_type = TASK_RESPONSE_TYPE_OAI_CHAT;
-            task.params.oaicompat_model = config_.model_path;
-        } else {
-            task.params.res_type = TASK_RESPONSE_TYPE_OAI_CMPL;
-            task.params.oaicompat_model = config_.model_path;
+            return call_route(routes_->post_chat_completions);
         }
-
-        // Post the task
-        reader.post_task(std::move(task));
-
-        // Wait for the result
-        bool stopped = false;
-        auto result = reader.next([&stopped]() { return stopped; });
-        if (!result) {
-            resp.status_code = 504;
-            resp.body = "{\"error\":{\"message\":\"Request timed out\",\"type\":\"timeout_error\",\"code\":504}}";
-            return resp;
+        if (bare == "/v1/chat/completions") {
+            return call_route(routes_->post_chat_completions);
         }
-
-        if (result->is_error()) {
-            auto* err = dynamic_cast<server_task_result_error*>(result.get());
-            if (err) {
-                resp.status_code = 500;
-                resp.body = "{\"error\":{\"message\":\"" + err->err_msg + "\",\"type\":\"backend_error\",\"code\":500}}";
-            } else {
-                resp.status_code = 500;
-                resp.body = "{\"error\":{\"message\":\"Unknown error\",\"type\":\"backend_error\",\"code\":500}}";
-            }
-            return resp;
+        if (bare == "/v1/chat/completions/control") {
+            return call_route(routes_->post_control);
         }
-
-        auto* cmpl = dynamic_cast<server_task_result_cmpl_final*>(result.get());
-        if (!cmpl) {
-            resp.status_code = 500;
-            resp.body = "{\"error\":{\"message\":\"Unexpected result type\",\"type\":\"backend_error\",\"code\":500}}";
-            return resp;
+        if (bare == "/v1/responses" || bare == "/responses") {
+            return call_route(routes_->post_responses_oai);
         }
-
-        json result_json = cmpl->to_json();
-        resp.status_code = 200;
-        resp.body = result_json.dump();
-        resp.json_data = result_json;
-        return resp;
+        if (bare == "/v1/audio/transcriptions" || bare == "/audio/transcriptions") {
+            return call_route(routes_->post_transcriptions_oai);
+        }
+        if (bare == "/tts") {
+            return call_route(routes_->post_tts);
+        }
+        if (bare == "/v1/messages") {
+            return call_route(routes_->post_anthropic_messages);
+        }
+        if (bare == "/infill") {
+            return call_route(routes_->post_infill);
+        }
+        if (bare == "/embedding" || bare == "/embeddings" || bare == "/v1/embeddings") {
+            return call_route(routes_->post_embeddings);
+        }
+        if (bare == "/rerank" || bare == "/reranking" || bare == "/v1/rerank" || bare == "/v1/reranking") {
+            return call_route(routes_->post_rerank);
+        }
+        if (bare == "/v1/systemone") {
+            return call_route(routes_->post_systemone);
+        }
+        if (bare == "/tokenize") {
+            return call_route(routes_->post_tokenize);
+        }
+        if (bare == "/detokenize") {
+            return call_route(routes_->post_detokenize);
+        }
+        if (bare == "/apply-template") {
+            return call_route(routes_->post_apply_template);
+        }
+        if (bare == "/chat/completions/input_tokens" || bare == "/v1/chat/completions/input_tokens") {
+            return call_route(routes_->post_chat_completions_tok);
+        }
+        if (bare == "/responses/input_tokens" || bare == "/v1/responses/input_tokens") {
+            return call_route(routes_->post_responses_tok_oai);
+        }
+        if (bare == "/v1/messages/count_tokens") {
+            return call_route(routes_->post_anthropic_count_tokens);
+        }
+        if (bare == "/lora-adapters") {
+            return call_route(routes_->post_lora_adapters);
+        }
+        if (bare == "/slots") {
+            return call_route(routes_->post_slots);
+        }
     }
 
-    // ------------------------------------------------------------------
-    // Other endpoints - fall through to placeholder
-    // ------------------------------------------------------------------
-    resp.status_code = 501;
-    resp.body = "{\"error\":{\"message\":\"Endpoint not yet implemented via server_context\",\"type\":\"not_implemented_error\",\"code\":501}}";
+    // Unknown endpoint
+    resp.status_code = 404;
+    resp.body = "{\"error\":{\"message\":\"Endpoint not found: " + ep + "\",\"type\":\"not_found_error\",\"code\":404}}";
     return resp;
 }
 
